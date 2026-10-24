@@ -96,15 +96,21 @@ enum ProductUITests {
             check("Native Outline button available", button != nil)
             button?.performClick(nil)
             check("Outline opens full preview without source pane", workspace.markdownViewMode == .preview && textView.isHiddenOrHasHiddenAncestor)
+            weak var firstPreview = workspace.markdownPreviewForTesting
+            button?.performClick(nil)
+            check("Outline during rendering reuses preview without another action", workspace.markdownViewMode == .preview && workspace.markdownPreviewForTesting === firstPreview && chooser.requests == 0)
             check("Outline renders unsaved heading", await wait { workspace.markdownPreviewForTesting?.page?.headings.last?.title == "Unsaved outline" })
             check("Outline does not ask for build configuration or save", chooser.requests == 0 && workspace.window.attachedSheet == nil && document.isModified && (try? String(contentsOf: md)) == source)
             check("Outline preserves source selection", textView.selectedRange() == NSRange(location: 4, length: 3))
-            if let heading = workspace.markdownPreviewForTesting?.page?.headings.last {
-                workspace.selectMarkdownHeading(heading)
-                check("Heading navigation keeps full preview", workspace.markdownViewMode == .preview && document.position(at: textView.selectedRange().location)?.line == heading.line)
-            } else { check("Heading navigation keeps full preview", false) }
+            button?.performClick(nil)
+            check("Repeated Outline remains a direct render action", workspace.markdownViewMode == .preview && workspace.markdownPreviewForTesting === firstPreview && chooser.requests == 0 && textView.selectedRange() == NSRange(location: 4, length: 3))
             document.undoManager.undo()
             check("Outline preserves native undo", document.storage.string == source && !document.isModified)
+            document.setTextUndoably("A Markdown note without headings.", actionName: "No headings fixture")
+            workspace.setMarkdownMode(.edit)
+            button?.performClick(nil)
+            check("Outline renders notes without headings", await wait { workspace.markdownViewMode == .preview && workspace.markdownPreviewForTesting?.page?.headings.isEmpty == true && workspace.markdownPreviewForTesting?.page?.wordCount == 5 })
+            document.undoManager.undo()
             workspace.setMarkdownMode(.edit)
             _ = workspace.executeCommand("build")
             check("Markdown build command renders without configuration", workspace.markdownViewMode == .preview && chooser.requests == 0 && workspace.window.attachedSheet == nil)
@@ -150,6 +156,10 @@ enum ProductUITests {
             workspace.setMarkdownMode(.sideBySide)
             await pump(0.2)
             check("Side-by-side source visible", !textView.isHiddenOrHasHiddenAncestor && (workspace.markdownPreviewForTesting?.webView.bounds.width ?? 0) > 180)
+            weak var sidePreview = workspace.markdownPreviewForTesting
+            button?.performClick(nil)
+            check("Outline from Side by Side directly opens full preview", workspace.markdownViewMode == .preview && textView.isHiddenOrHasHiddenAncestor && workspace.markdownPreviewForTesting === sidePreview)
+            workspace.setMarkdownMode(.sideBySide)
             if let sourceSplit = textView.enclosingScrollView?.superview, let split = sourceSplit.superview {
                 let before = sourceSplit.frame.width
                 let local = NSPoint(x: sourceSplit.frame.maxX + 0.5, y: split.bounds.midY)
@@ -174,14 +184,39 @@ enum ProductUITests {
             document.undoManager.endUndoGrouping()
             check("Native edit reaches preview", await wait { workspace.markdownPreviewForTesting?.renderedRevision == document.revision && workspace.markdownPreviewForTesting?.page?.headings.last?.title == "Live edit" })
             document.undoManager.undo()
-            check("Native undo reaches preview", await wait { document.storage.string == source && workspace.markdownPreviewForTesting?.page?.headings.last?.title == "Next section" })
-            if let heading = workspace.markdownPreviewForTesting?.page?.headings.last {
-                workspace.selectMarkdownHeading(heading)
-                check("Outline navigates source", document.position(at: textView.selectedRange().location)?.line == heading.line)
-            }
+            check("Native undo reaches preview", await wait { document.storage.string == source && workspace.markdownPreviewForTesting?.renderedRevision == document.revision && workspace.markdownPreviewForTesting?.page?.headings.last?.title == "Next section" })
+            if let preview = workspace.markdownPreviewForTesting, let heading = preview.page?.headings.last {
+                let target = "#" + heading.anchor
+                let encoded = String(data: try JSONEncoder().encode(target), encoding: .utf8)!
+                let coordinates = await evaluate(preview.webView, "(() => { const hash = \(encoded); const contents = document.querySelector('details.contents'); if (contents) contents.open = true; window.scrollTo(0,0); const link = Array.from(document.querySelectorAll('details.contents a')).find(a => a.getAttribute('href') === hash); if (!link) return null; const r = link.getBoundingClientRect(); return [r.left+r.width/2,r.top+r.height/2]; })()") as? [Double]
+                var clicked = false
+                if let coordinates, coordinates.count == 2 {
+                    await pump(0.1)
+                    let web = preview.webView
+                    let local = NSPoint(x: coordinates[0], y: web.isFlipped ? coordinates[1] : web.bounds.height - coordinates[1])
+                    let point = web.convert(local, to: nil)
+                    func event(_ type: NSEvent.EventType) -> NSEvent? {
+                        NSEvent.mouseEvent(with: type, location: point, modifierFlags: [], timestamp: ProcessInfo.processInfo.systemUptime,
+                            windowNumber: workspace.window.windowNumber, context: nil, eventNumber: 0, clickCount: 1, pressure: 1)
+                    }
+                    if let down = event(.leftMouseDown), let up = event(.leftMouseUp) {
+                        NSApp.postEvent(up, atStart: false)
+                        workspace.window.sendEvent(down)
+                        clicked = true
+                    }
+                }
+                await pump(0.2)
+                let selectedHash = await evaluate(preview.webView, "location.hash") as? String
+                let visible = await evaluate(preview.webView, "(() => { const h = document.getElementById(\(encoded).slice(1)); if (!h) return false; const r = h.getBoundingClientRect(); return window.scrollY > 0 && r.bottom > 0 && r.top < innerHeight; })()") as? Bool == true
+                check("Contents navigates the rendered heading", clicked && visible && document.storage.string == source)
+                if !clicked || !visible {
+                    let details = await evaluate(preview.webView, "JSON.stringify({url:location.href,links:Array.from(document.querySelectorAll('details.contents a')).map(a=>({href:a.href,target:a.getAttribute('href')}))})")
+                    print("DETAIL Contents: clicked=\(clicked), selected=\(selectedHash ?? "nil"), target=\(target), DOM=\(details ?? "nil")")
+                }
+            } else { check("Contents navigates the rendered heading", false) }
             var light = EditorConfiguration(); light.theme = "light"
             workspace.applyConfiguration(light)
-            check("Live theme rerenders", await wait { workspace.markdownPreviewForTesting?.page?.html.contains("data-theme=\"light\"") == true })
+            check("Live theme rerenders", await wait { workspace.markdownPreviewForTesting?.isRendering == false && workspace.markdownPreviewForTesting?.page?.html.contains("data-theme=\"light\"") == true })
             let exported = directory.appendingPathComponent("export.html")
             workspace.fileChooser = ProductExportChooser(url: exported)
             _ = workspace.executeCommand("markdown_export")

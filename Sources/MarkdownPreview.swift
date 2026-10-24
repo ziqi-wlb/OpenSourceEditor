@@ -27,6 +27,7 @@ private final class MarkdownRenderOperation: Operation {
 /// One preview owns one bounded serial render queue. Requests retain text snapshots,
 /// never documents. Generation checks discard completed work after tab changes.
 final class MarkdownPreviewView: NSView, WKNavigationDelegate {
+    private static let documentOrigin = URL(string: "source-editor-preview://document/")!
     private struct Key: Equatable {
         let document: ObjectIdentifier
         let revision: UInt64
@@ -43,6 +44,7 @@ final class MarkdownPreviewView: NSView, WKNavigationDelegate {
     private var key: Key?
     private var generation = 0
     private var pendingScroll: Double = 0
+    private var contentLoad: (navigation: WKNavigation, revision: UInt64)?
     private(set) var page: MarkdownPage?
     private(set) var isRendering = false
     private(set) var renderedRevision: UInt64?
@@ -89,6 +91,7 @@ final class MarkdownPreviewView: NSView, WKNavigationDelegate {
         debounce?.invalidate()
         queue.cancelAllOperations()
         page = nil
+        contentLoad = nil
         renderedRevision = nil
         isRendering = true
         notice.stringValue = "Rendering Markdown…"
@@ -106,18 +109,16 @@ final class MarkdownPreviewView: NSView, WKNavigationDelegate {
             guard let result = request?.result, request?.isCancelled == false else { return }
             DispatchQueue.main.async { [weak self] in
                 guard let self, self.generation == currentGeneration, self.key == next else { return }
-                self.isRendering = false
                 switch result {
                 case .success(let page):
                     self.page = page
-                    self.renderedRevision = next.revision
-                    self.notice.isHidden = true
-                    self.needsLayout = true
                     self.webView.underPageBackgroundColor = light ? .white : EditorTheme.background
                     func load(_ scroll: Double) {
                         guard self.generation == currentGeneration else { return }
                         self.pendingScroll = sameDocument ? scroll : 0
-                        self.webView.loadHTMLString(page.html, baseURL: nil)
+                        if let navigation = self.webView.loadHTMLString(page.html, baseURL: Self.documentOrigin) {
+                            self.contentLoad = (navigation, next.revision)
+                        }
                     }
                     if sameDocument {
                         self.webView.evaluateJavaScript("window.scrollY / Math.max(1, document.documentElement.scrollHeight - innerHeight)") { value, _ in
@@ -143,6 +144,8 @@ final class MarkdownPreviewView: NSView, WKNavigationDelegate {
 
     private func showError(_ message: String) {
         isRendering = false
+        contentLoad = nil
+        renderedRevision = nil
         page = nil
         notice.stringValue = message
         notice.isHidden = false
@@ -151,14 +154,11 @@ final class MarkdownPreviewView: NSView, WKNavigationDelegate {
         didRender?()
     }
 
-    func showHeading(_ heading: MarkdownHeading) {
-        guard let data = try? JSONEncoder().encode(heading.anchor), let anchor = String(data: data, encoding: .utf8) else { return }
-        webView.evaluateJavaScript("document.getElementById(\(anchor))?.scrollIntoView({block:'start'})", completionHandler: nil)
-    }
-
     func stop() {
         generation += 1
         key = nil
+        contentLoad = nil
+        renderedRevision = nil
         debounce?.invalidate()
         debounce = nil
         queue.cancelAllOperations()
@@ -170,20 +170,33 @@ final class MarkdownPreviewView: NSView, WKNavigationDelegate {
     }
 
     func webView(_ webView: WKWebView, didFinish navigation: WKNavigation!) {
+        guard let load = contentLoad, navigation === load.navigation else { return }
+        renderedRevision = load.revision
+        isRendering = false
+        notice.isHidden = true
+        needsLayout = true
         if pendingScroll > 0 {
             webView.evaluateJavaScript("window.scrollTo(0, Math.max(0,document.documentElement.scrollHeight-innerHeight)*\(pendingScroll))", completionHandler: nil)
         }
         pendingScroll = 0
+        didRender?()
     }
 
     func webView(_ webView: WKWebView, decidePolicyFor navigationAction: WKNavigationAction,
                  decisionHandler: @escaping (WKNavigationActionPolicy) -> Void) {
         guard let url = navigationAction.request.url else { decisionHandler(.cancel); return }
-        if navigationAction.navigationType != .linkActivated {
-            decisionHandler(url.scheme == "about" ? .allow : .cancel)
+        if url.scheme == Self.documentOrigin.scheme, url.host == Self.documentOrigin.host, url.path == Self.documentOrigin.path,
+           let anchor = URLComponents(url: url, resolvingAgainstBaseURL: false)?.fragment {
+            decisionHandler(.cancel)
+            guard !isRendering, page?.headings.contains(where: { $0.anchor == anchor }) == true,
+                  let data = try? JSONEncoder().encode(anchor), let encoded = String(data: data, encoding: .utf8) else { return }
+            webView.evaluateJavaScript("document.getElementById(\(encoded))?.scrollIntoView({block:'start'})", completionHandler: nil)
             return
         }
-        if url.scheme == "about", url.fragment != nil { decisionHandler(.allow); return }
+        if navigationAction.navigationType != .linkActivated {
+            decisionHandler(url.scheme == "about" || url == Self.documentOrigin ? .allow : .cancel)
+            return
+        }
         decisionHandler(.cancel)
         if url.scheme == "source-editor-link", let file = page?.localLinks[url.lastPathComponent] { openFile?(file) }
         else if ["https", "http", "mailto"].contains(url.scheme?.lowercased() ?? "") { NSWorkspace.shared.open(url) }

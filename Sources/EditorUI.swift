@@ -820,7 +820,6 @@ final class EditorWorkspace: NSObject, NSWindowDelegate,
     private let markdownOutline = NSButton(title: "Outline", target: nil, action: nil)
     private let markdownExport = NSButton(title: "Export HTML…", target: nil, action: nil)
     private var markdownPreview: MarkdownPreviewView?
-    private var pendingMarkdownOutline: ObjectIdentifier?
     private var recovery: EditorRecovery?
     private var recoveryTimer: Timer?
     private var recoverySignature = ""
@@ -3127,7 +3126,7 @@ final class EditorWorkspace: NSObject, NSWindowDelegate,
         markdownModes.toolTip = "Edit source, read the rendered document, or show both"
         markdownOutline.target = self
         markdownOutline.action = #selector(showMarkdownOutline)
-        markdownOutline.toolTip = "Render Markdown; in preview, navigate headings"
+        markdownOutline.toolTip = "Render the current Markdown document"
         markdownExport.target = self
         markdownExport.action = #selector(exportMarkdown)
         markdownInfo.font = .systemFont(ofSize: 11)
@@ -3156,21 +3155,7 @@ final class EditorWorkspace: NSObject, NSWindowDelegate,
         }
         if markdownPreview == nil {
             let preview = MarkdownPreviewView(frame: .zero)
-            preview.didRender = { [weak self] in
-                guard let self else { return }
-                self.refreshMarkdownInfo()
-                guard let pending = self.pendingMarkdownOutline,
-                      self.currentDocument.map(ObjectIdentifier.init) == pending,
-                      self.markdownPreview?.isRendering == false else { return }
-                self.pendingMarkdownOutline = nil
-                if self.markdownPreview?.page != nil {
-                    DispatchQueue.main.async { [weak self] in
-                        guard let self, self.currentDocument.map(ObjectIdentifier.init) == pending,
-                              self.markdownViewMode != .edit else { return }
-                        self.showMarkdownOutline()
-                    }
-                }
-            }
+            preview.didRender = { [weak self] in self?.refreshMarkdownInfo() }
             preview.openFile = { [weak self] url in self?.openDocument(url) }
             markdownPreview = preview
             contentSplit.addArrangedSubview(preview)
@@ -3182,7 +3167,6 @@ final class EditorWorkspace: NSObject, NSWindowDelegate,
     }
 
     private func releaseMarkdownPreview() {
-        pendingMarkdownOutline = nil
         guard let preview = markdownPreview else { return }
         preview.stop()
         contentSplit.removeArrangedSubview(preview)
@@ -3211,35 +3195,7 @@ final class EditorWorkspace: NSObject, NSWindowDelegate,
     @objc private func toggleMarkdownPreview() { setMarkdownMode(markdownViewMode == .preview ? .edit : .preview) }
     @objc private func markdownToSide() { setMarkdownMode(markdownViewMode == .sideBySide ? .edit : .sideBySide) }
 
-    @objc private func showMarkdownOutline() {
-        guard currentDocument?.syntaxIdentifier == "md" else { return }
-        if markdownViewMode == .edit {
-            setMarkdownMode(.preview)
-            return
-        }
-        if markdownPreview?.isRendering == true {
-            pendingMarkdownOutline = currentDocument.map(ObjectIdentifier.init)
-            return
-        }
-        guard let headings = markdownPreview?.page?.headings, !headings.isEmpty else { return }
-        let menu = NSMenu(title: "Markdown Outline")
-        for heading in headings {
-            let item = actionItem(heading.title) { [weak self] in self?.selectMarkdownHeading(heading) }
-            item.indentationLevel = min(4, max(0, heading.level - 1))
-            menu.addItem(item)
-        }
-        menu.popUp(positioning: nil, at: NSPoint(x: 0, y: markdownOutline.bounds.height), in: markdownOutline)
-    }
-
-    func selectMarkdownHeading(_ heading: MarkdownHeading) {
-        guard let document = currentDocument, let text = currentTextView else { return }
-        let starts = document.lineIndex.starts
-        guard starts.indices.contains(heading.line - 1) else { return }
-        text.setSelectedRange(NSRange(location: starts[heading.line - 1], length: 0))
-        text.scrollRangeToVisible(text.selectedRange())
-        markdownPreview?.showHeading(heading)
-        updateStatus()
-    }
+    @objc private func showMarkdownOutline() { setMarkdownMode(.preview) }
 
     @objc private func exportMarkdown() {
         guard let page = markdownPreview?.page, markdownPreview?.isRendering == false else { return }
@@ -3323,7 +3279,7 @@ final class EditorWorkspace: NSObject, NSWindowDelegate,
             ("View: Split Editor", "⌥⌘2 · shared document", { [weak self] in self?.toggleSplit() }),
             ("Markdown: Toggle Preview", "⇧⌘V", { [weak self] in self?.toggleMarkdownPreview() }),
             ("Markdown: Preview to the Side", "⌥⌘V", { [weak self] in self?.markdownToSide() }),
-            ("Markdown: Document Outline", "Headings and source navigation", { [weak self] in self?.showMarkdownOutline() }),
+            ("Markdown: Document Outline", "Render the current document", { [weak self] in self?.showMarkdownOutline() }),
             ("Markdown: Export HTML", "Standalone rendered document", { [weak self] in self?.exportMarkdown() }),
             ("Notes: New Markdown", "Blank note", { [weak self] in self?.newNote(.blank) }),
             ("Notes: Meeting Template", "Agenda, decisions and action items", { [weak self] in self?.newNote(.meeting) }),
