@@ -27,6 +27,101 @@ enum DocumentSettingsTestRunner {
         func file(_ name: String, _ bytes: Data) throws -> URL {
             let url = directory.appendingPathComponent(name); try bytes.write(to: url); return url
         }
+        test("Document position preserves scalar, tab and CRLF cursor semantics") {
+            func reference(_ text: String, _ offset: Int, _ width: Int) -> (Int, Int) {
+                var line = 1, column = 0, previousCR = false
+                let prefix = String(decoding: Array(text.utf16.prefix(offset)), as: UTF16.self)
+                for scalar in prefix.unicodeScalars {
+                    if scalar.value == 13 { line += 1; column = 0; previousCR = true }
+                    else if scalar.value == 10 { if !previousCR { line += 1 }; column = 0; previousCR = false }
+                    else { column += scalar.value == 9 ? width - column % width : 1; previousCR = false }
+                }
+                return (line, column + 1)
+            }
+            for text in ["", "a\r\nb\rc\n", "\r\n\r\r\n\n", "🙂\t甲e\u{301}\r\n\tend\n"] {
+                let document = EditorDocument(text: text)
+                for width in [1, 4, 8] {
+                    var settings = document.settings; settings.tabSize = width; try document.updateSettings(settings)
+                    for offset in 0...text.utf16.count {
+                        let units = Array(text.utf16)
+                        if offset > 0 && offset < units.count && UTF16.isLeadSurrogate(units[offset - 1]) && UTF16.isTrailSurrogate(units[offset]) {
+                            try check(document.position(at: offset) == nil, "Split surrogate rejected")
+                        } else {
+                            let expected = reference(text, offset, width), actual = document.position(at: offset)
+                            try check(actual?.line == expected.0 && actual?.column == expected.1, "Position \(offset) tab \(width)")
+                        }
+                    }
+                }
+                try check(document.position(at: -1) == nil && document.position(at: text.utf16.count + 1) == nil, "Range validation")
+            }
+        }
+        test("Line index handles chunk boundary pairs and updates after native edits and undo") {
+            let text = String(repeating: "x", count: 4095) + "🙂\r\n\tend\n"
+            let document = EditorDocument(text: text)
+            try check(document.position(at: 4097)?.column == 4097, "Surrogate across scan buffer")
+            try check(document.position(at: 4098)?.line == 2 && document.position(at: 4098)?.column == 1, "Between CRLF")
+            try check(document.lineIndex.starts == [0, 4099, 4104], "Logical offsets")
+            document.storage.replaceCharacters(in: NSRange(location: 0, length: 0), with: "a\n")
+            try check(document.lineIndex.starts == [0, 2, 4101, 4106] && document.position(at: 4106)?.line == 4, "Native storage invalidation before notification")
+            document.setTextUndoably("a\rb\n", actionName: "Edit")
+            try check(document.position(at: 4)?.line == 3, "Replacement")
+            document.undoManager.undo()
+            try check(document.position(at: 4106)?.line == 4, "Undo invalidation")
+            document.restoreSessionState(text: "restored\n", encoding: nil, settings: nil)
+            try check(document.position(at: 9)?.line == 2, "Recovery invalidation")
+        }
+        test("Dirty cache preserves exact Unicode and saved baseline across undo and metadata") {
+            let document = EditorDocument(text: "é\n")
+            try check(!document.isModified, "Initial baseline")
+            document.storage.addAttribute(.foregroundColor, value: NSColor.red, range: NSRange(location: 0, length: 2))
+            try check(!document.isModified, "Presentation attributes")
+            document.setTextUndoably("e\u{301}\n", actionName: "Change normalization")
+            try check(document.isModified && document.isModified, "Canonically equivalent bytes remain dirty")
+            document.undoManager.undo(); try check(!document.isModified, "Undo returns to saved bytes")
+            document.undoManager.redo(); document.checkpoint(); try check(!document.isModified, "New save baseline")
+            document.undoManager.undo(); try check(document.isModified, "Undo across saved baseline")
+            document.undoManager.redo(); try check(!document.isModified, "Redo saved text")
+            document.storage.replaceCharacters(in: NSRange(location: 0, length: 1), with: "X")
+            try check(document.isModified, "Direct storage change invalidates cache")
+        }
+        test("Viewport lexical matches retain multiline context and invalidate with text and syntax") {
+            var settings = DocumentSettings(); settings.syntax = "swift"
+            let body = String(repeating: "body\n", count: 1000)
+            let document = EditorDocument(text: "/*\n" + body + "let value = 123\n*/\n", settings: settings)
+            let offset = 3 + body.utf16.count
+            let viewport = NSRange(location: offset, length: 15)
+            let comments = document.syntaxHighlights.matches(in: viewport, group: 3)
+            try check(comments.count == 1 && comments.first?.location == viewport.location && comments.first?.length == viewport.length, "Multiline comment intersects only the visible range")
+            try check(document.syntaxHighlights.matches(in: viewport, group: 0).count == 1, "Keyword retained for comment overlay precedence")
+            document.setTextUndoably("# let value = 123\n", actionName: "Edit")
+            try check(document.syntaxHighlights.groups[3].isEmpty, "Text cache invalidates")
+            settings.syntax = "py"; try document.updateSettings(settings)
+            try check(document.syntaxHighlights.groups[3].count == 1, "Syntax cache invalidates without text revision")
+            document.undoManager.undo()
+            try check(document.syntaxHighlights.groups[3].isEmpty, "Undo honors currently selected syntax")
+            settings.syntax = "plain"; try document.updateSettings(settings)
+            try check(document.syntaxHighlights.groups.isEmpty, "Unsupported syntax has no tokens")
+        }
+        test("Chunked indentation preserves newline separators, blank lines and grapheme prefixes") {
+            let cases = ["\tfoo\r\n\tbar\n", "  foo\u{85}    bar\u{2028}  baz", "   \r\n\t\n", " \u{301}x\n  y\n", "    a\u{B}  b\u{C}    c\u{2029}plain", String(repeating: "x", count: 4095) + "\r\n  value\n    next\n"]
+            for text in cases {
+                var expected = DocumentSettings(), spacesRows = 0, tabRows = 0, width = 0
+                for line in text.components(separatedBy: .newlines) {
+                    let prefix = line.prefix { $0 == " " || $0 == "\t" }
+                    guard !prefix.isEmpty, prefix.count < line.count else { continue }
+                    if prefix.contains("\t") { tabRows += 1 }
+                    else {
+                        spacesRows += 1
+                        var x = width, y = prefix.count
+                        while y != 0 { let remainder = x % y; x = y; y = remainder }
+                        width = x
+                    }
+                }
+                if spacesRows > tabRows { expected.translateTabsToSpaces = true; if width > 0 { expected.tabSize = width } }
+                else if tabRows > 0 { expected.translateTabsToSpaces = false }
+                try check(TextOperations.detectedIndentation(in: text, defaults: DocumentSettings()) == expected, "Streaming detection parity")
+            }
+        }
         for encoding in EditorEncoding.allCases {
             test("Codec ASCII round-trip: " + encoding.displayName) {
                 let text = " A\tB\r\n"

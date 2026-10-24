@@ -43,6 +43,8 @@ Swift and AppKit provide native windows, text layout, tabs, project trees, share
 
 The release builds only `Sources/*.swift` and whitelisted Python/JSON resources. Tests, benchmarks, snapshots and test menu diagnostics compile only with `bash build.sh --tests`, into a separate **Source Editor Tests.app**. Generated icons come from the original Swift drawing source. No third-party runtime frameworks are bundled.
 
+TextKit lays out visible text on demand. Each document shares its line index and lexical matches across split panes; text edits invalidate these caches at the storage boundary. Only visible syntax matches are painted, and dirty file labels update without recreating every tab. See [performance measurements and remaining costs](PERFORMANCE.md).
+
 This is not a complete Sublime Text replacement. Grammar/snippet engines, full plugin compatibility, LSP, minimap, rectangular selection and project-wide search remain incomplete. The Python SDK runs selected code with the current user's permissions; it is not a sandbox. Windows currently has a smaller feature set.
 
 ## Tests and source package
@@ -51,6 +53,8 @@ This is not a complete Sublime Text replacement. Grammar/snippet engines, full p
 bash tests/run_all.sh                    # Headless production-boundary tests
 bash tests/run_all.sh --ui               # Adds native UI checks; requires a GUI session
 python3 scripts/export_source.py .build/SourceEditor-source.tar.gz --with-tests
+# Optional native performance workloads, in a logged-in macOS GUI session:
+python3 tests/run_performance.py local-performance
 ```
 
 Results and screenshots stay in `.build/test-results/`. All tests use owned temporary files; native file chooser acceptance, real IME, and complete multi-screen/fullscreen behavior still need manual verification. A Windows build must also be run on Windows; cross-compilation alone does not verify its GUI.

@@ -23,8 +23,20 @@ if let flag = arguments.firstIndex(of: "--contract-test"), flag + 1 < arguments.
 if arguments.contains("--benchmark") { exit(BenchmarkRunner.run()) }
 let application = NSApplication.shared
 application.setActivationPolicy(.regular)
-let delegate = EditorAppDelegate(recentFiles: RecentFiles(defaults: (arguments.contains("--ui-self-test") || arguments.contains("--multi-window-ui-test")) ? nil : .standard))
+let delegate = EditorAppDelegate(recentFiles: RecentFiles(defaults: (arguments.contains("--ui-self-test") || arguments.contains("--multi-window-ui-test") || arguments.contains("--performance-test")) ? nil : .standard))
 application.delegate = delegate
+if arguments.contains("--performance-test") {
+    setbuf(stdout, nil)
+    func option(_ name: String) -> String { arguments.first(where: { $0.hasPrefix(name + "=") }).map { String($0.dropFirst(name.count + 1)) } ?? "" }
+    let directory = URL(fileURLWithPath: option("--performance-directory"), isDirectory: true)
+    let scenario = option("--performance-scenario")
+    let bytes = Int(option("--performance-bytes")) ?? 65536
+    Timer.scheduledTimer(withTimeInterval: 0.1, repeats: false) { _ in
+        Task { @MainActor in exit(await PerformanceTests.run(app: delegate, directory: directory, scenario: scenario, bytes: bytes)) }
+    }
+    application.run()
+    exit(1)
+}
 if arguments.contains("--service-test") {
     application.setActivationPolicy(.prohibited)
     Timer.scheduledTimer(withTimeInterval: 0.1, repeats: false) { _ in exit(ServiceTestRunner.run()) }

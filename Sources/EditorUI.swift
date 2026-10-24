@@ -283,9 +283,6 @@ private final class EditorTextView: NSTextView {
 
 private final class LineNumberRuler: NSRulerView {
     weak var editor: NSTextView?
-    private weak var lineDocument: EditorDocument?
-    private var lineRevision: UInt64?
-    private var logicalStarts = [0]
     private(set) var visibleLineNumbers: [Int] = []
     override var isFlipped: Bool { true }
 
@@ -303,30 +300,15 @@ private final class LineNumberRuler: NSRulerView {
         bounds.fill()
         visibleLineNumbers = []
         guard let editor, let layout = editor.layoutManager, let container = editor.textContainer else { return }
-        let string = editor.string as NSString
-        if let document = (editor as? EditorTextView)?.document {
-            if lineDocument !== document || lineRevision != document.revision {
-                logicalStarts = TextOperations.lineStarts(in: editor.string)
-                lineDocument = document
-                lineRevision = document.revision
-            }
-        } else {
-            logicalStarts = TextOperations.lineStarts(in: editor.string)
-            lineDocument = nil
-            lineRevision = nil
-        }
+        let length = editor.textStorage?.length ?? editor.string.utf16.count
+        let index = (editor as? EditorTextView)?.document?.lineIndex ?? DocumentLineIndex(editor.string as NSString)
+        let logicalStarts = index.starts
         let visible = editor.visibleRect.offsetBy(dx: -editor.textContainerOrigin.x,
                                                  dy: -editor.textContainerOrigin.y)
         let glyphs = layout.glyphRange(forBoundingRect: visible, in: container)
         let characters = layout.characterRange(forGlyphRange: glyphs, actualGlyphRange: nil)
-        let start = min(characters.location, string.length)
-        var lower = 0, upper = logicalStarts.count
-        while lower < upper {
-            let middle = lower + (upper - lower) / 2
-            if logicalStarts[middle] <= start { lower = middle + 1 }
-            else { upper = middle }
-        }
-        var lineIndex = max(0, lower - 1)
+        let start = min(characters.location, length)
+        var lineIndex = index.lineIndex(at: start)
         let attributes: [NSAttributedString.Key: Any] = [
             .font: NSFont.monospacedDigitSystemFont(ofSize: 11, weight: .regular),
             .foregroundColor: EditorTheme.muted,
@@ -334,7 +316,7 @@ private final class LineNumberRuler: NSRulerView {
         repeat {
             let lineStart = logicalStarts[lineIndex]
             let lineRect: NSRect
-            if string.length == 0 || lineStart == string.length {
+            if length == 0 || lineStart == length {
                 lineRect = layout.extraLineFragmentRect
             } else {
                 let glyph = layout.glyphIndexForCharacter(at: lineStart)
@@ -346,7 +328,7 @@ private final class LineNumberRuler: NSRulerView {
             let width = label.size(withAttributes: attributes).width
             label.draw(at: NSPoint(x: ruleThickness - width - 12, y: y), withAttributes: attributes)
             lineIndex += 1
-        } while lineIndex < logicalStarts.count && logicalStarts[lineIndex] <= min(string.length, NSMaxRange(characters))
+        } while lineIndex < logicalStarts.count && logicalStarts[lineIndex] <= min(length, NSMaxRange(characters))
     }
 }
 
@@ -355,21 +337,18 @@ private final class EditorScrollView: NSScrollView {
         super.layout()
         let viewport = contentView.bounds.size
         guard let text = documentView as? NSTextView, let container = text.textContainer,
-              let layout = text.layoutManager, viewport.width > 0, viewport.height > 0 else { return }
+              viewport.width > 0, viewport.height > 0 else { return }
         let minimum = NSSize(width: 0, height: viewport.height)
         if text.minSize != minimum { text.minSize = minimum }
         var size = text.frame.size
         if container.widthTracksTextView { size.width = max(64, viewport.width) }
         size.height = max(size.height, viewport.height)
         if size != text.frame.size { text.setFrameSize(size) }
-        // Resolve layout before display. The viewport width is the single source
-        // for wrapped geometry; sizeToFit would compete with that width owner.
-        layout.ensureLayout(for: container)
-        let used = layout.usedRect(for: container)
-        let height = max(viewport.height, used.maxY + text.textContainerInset.height * 2)
-        let width = container.widthTracksTextView ? text.frame.width : max(viewport.width, used.maxX + text.textContainerInset.width * 2)
-        let finalSize = NSSize(width: width, height: height)
-        if text.frame.size != finalSize { text.setFrameSize(finalSize) }
+        // TextKit owns the document extent and estimates unlaid text. Resolving
+        // the entire container here defeats its viewport layout on every resize.
+        if !container.widthTracksTextView && text.frame.width < viewport.width {
+            text.setFrameSize(NSSize(width: viewport.width, height: text.frame.height))
+        }
     }
 }
 
@@ -438,10 +417,13 @@ private final class EditorPane: NSObject {
     let layout: NSLayoutManager
     let ruler: LineNumberRuler
     private var highlightWork: DispatchWorkItem?
+    private var highlightedRanges: [NSRange] = []
+    private var highlightedViewport: NSRange?
 
     init(document: EditorDocument, delegate: NSTextViewDelegate, focus: @escaping () -> Void) {
         self.document = document
         layout = NSLayoutManager()
+        layout.allowsNonContiguousLayout = true
         let initialFrame = NSRect(x: 0, y: 0, width: 640, height: 400)
         scroll.frame = initialFrame
         let container = NSTextContainer(containerSize: NSSize(width: 616, height: CGFloat.greatestFiniteMagnitude))
@@ -482,7 +464,6 @@ private final class EditorPane: NSObject {
         textView.isHorizontallyResizable = false
         textView.autoresizingMask = []
         container.widthTracksTextView = true
-        layout.ensureLayout(for: container)
         NotificationCenter.default.addObserver(self, selector: #selector(scrolled),
             name: NSView.boundsDidChangeNotification, object: scroll.contentView)
         scroll.contentView.postsBoundsChangedNotifications = true
@@ -495,15 +476,16 @@ private final class EditorPane: NSObject {
         document.storage.removeLayoutManager(layout)
     }
 
-    @objc private func scrolled() { ruler.needsDisplay = true }
+    @objc private func scrolled() { scheduleHighlight(delay: 0.03, relayout: false) }
 
-    func scheduleHighlight() {
+    func scheduleHighlight(delay: Double = 0.15, relayout: Bool = true) {
         highlightWork?.cancel()
+        if relayout { highlightedViewport = nil }
         let work = DispatchWorkItem { [weak self] in self?.highlight() }
         highlightWork = work
-        DispatchQueue.main.asyncAfter(deadline: .now() + 0.15, execute: work)
+        DispatchQueue.main.asyncAfter(deadline: .now() + delay, execute: work)
         ruler.needsDisplay = true
-        scroll.needsLayout = true
+        if relayout { scroll.needsLayout = true }
     }
 
     func applyConfiguration(_ configuration: EditorConfiguration) {
@@ -532,26 +514,35 @@ private final class EditorPane: NSObject {
     }
 
     private func highlight() {
-        let source = document.storage.string
-        let range = NSRange(location: 0, length: (source as NSString).length)
-        layout.removeTemporaryAttribute(.foregroundColor, forCharacterRange: range)
-        // Lexical highlighting is deliberately bounded; it is a presentation aid,
-        // and very large documents remain editable without a full-file regex pass.
-        guard range.length <= 2_000_000 else { return }
-        let ext = document.syntaxIdentifier
-        guard ["swift", "py", "js", "jsx", "ts", "tsx", "json", "c", "h", "cpp", "hpp", "m", "mm", "rs", "go", "sh", "rb", "java", "css", "html", "xml", "md", "yaml", "yml", "toml"].contains(ext) else { return }
-        let patterns: [(String, NSColor)] = [
-            (#"\b(?:class|struct|enum|protocol|extension|func|def|function|let|var|const|if|else|elif|for|while|return|import|from|public|private|static|try|catch|throw|throws|async|await|true|false|null|nil|None|True|False|switch|case|break|continue|in|as|new|export|interface|type|fn|impl|use|package)\b"#, NSColor.systemPurple),
-            (#"\b\d+(?:\.\d+)?\b"#, NSColor.systemOrange),
-            (#"\"(?:\\.|[^\"\\])*\"|'(?:\\.|[^'\\])*'"#, NSColor.systemGreen),
-            (ext == "py" || ext == "sh" || ext == "rb" || ext == "yaml" || ext == "yml" || ext == "toml" ? #"(?m)#.*$"# : #"(?m)//.*$|/\*[\s\S]*?\*/"#, EditorTheme.muted),
-        ]
-        for (pattern, color) in patterns {
-            guard let regex = try? NSRegularExpression(pattern: pattern) else { continue }
-            regex.enumerateMatches(in: source, range: range) { match, _, _ in
-                if let match { layout.addTemporaryAttribute(.foregroundColor, value: color, forCharacterRange: match.range) }
+        let range = NSRange(location: 0, length: document.storage.length)
+        if highlightedViewport == nil && !highlightedRanges.isEmpty {
+            // Edits shift temporary ranges. Clear the invalidated presentation
+            // once, then scrolling only replaces the previous viewport ranges.
+            layout.removeTemporaryAttribute(.foregroundColor, forCharacterRange: range)
+            highlightedRanges.removeAll(keepingCapacity: true)
+        }
+        let highlights = document.syntaxHighlights
+        guard !highlights.groups.isEmpty, let container = textView.textContainer else {
+            highlightedViewport = NSRange(location: 0, length: 0)
+            return
+        }
+        let visible = textView.visibleRect.offsetBy(dx: -textView.textContainerOrigin.x, dy: -textView.textContainerOrigin.y)
+        let glyphs = layout.glyphRange(forBoundingRect: visible, in: container)
+        let characters = layout.characterRange(forGlyphRange: glyphs, actualGlyphRange: nil)
+        let lower = max(0, characters.location - 2048)
+        let upper = min(range.length, NSMaxRange(characters) + 2048)
+        let viewport = NSRange(location: lower, length: max(0, upper - lower))
+        if highlightedViewport == viewport { return }
+        for oldRange in highlightedRanges { layout.removeTemporaryAttribute(.foregroundColor, forCharacterRange: oldRange) }
+        highlightedRanges.removeAll(keepingCapacity: true)
+        let colors = [NSColor.systemPurple, .systemOrange, .systemGreen, EditorTheme.muted]
+        for (group, color) in colors.enumerated() {
+            for token in highlights.matches(in: viewport, group: group) {
+                layout.addTemporaryAttribute(.foregroundColor, value: color, forCharacterRange: token)
+                highlightedRanges.append(token)
             }
         }
+        highlightedViewport = viewport
     }
 }
 
@@ -1703,10 +1694,23 @@ final class EditorWorkspace: NSObject, NSWindowDelegate,
     @objc private func documentChanged(_ notification: Notification) {
         guard let document = notification.object as? EditorDocument,
               documents.contains(where: { $0 === document }) else { return }
-        for pane in panes { pane.scheduleHighlight() }
-        rebuildTabs()
+        for pane in panes where pane.document === document { pane.scheduleHighlight() }
+        updateTab(document)
         updateStatus()
         updateFindCount()
+    }
+
+    private func updateTab(_ document: EditorDocument) {
+        guard let index = documents.firstIndex(where: { $0 === document }),
+              tabs.arrangedSubviews.indices.contains(index),
+              let stack = tabs.arrangedSubviews[index] as? NSStackView,
+              let button = stack.arrangedSubviews.first as? ContextMenuButton else { return }
+        let title = (document.isModified ? "● " : "") + document.displayName
+        button.toolTip = document.fileURL?.path ?? "Unsaved document"
+        guard button.title != title else { return }
+        button.title = title
+        tabs.layoutSubtreeIfNeeded()
+        tabs.setFrameSize(NSSize(width: max(100, tabs.fittingSize.width), height: 40))
     }
 
     func textViewDidChangeSelection(_ notification: Notification) { updateStatus() }
@@ -1720,7 +1724,7 @@ final class EditorWorkspace: NSObject, NSWindowDelegate,
         let source = document.storage.string as NSString
         let selection = textView.selectedRange()
         let offset = min(selection.location, source.length)
-        let position = TextOperations.position(in: document.storage.string, utf16Offset: offset, tabSize: document.settings.tabSize)
+        let position = document.position(at: offset)
         let selectedCharacters = selection.length > 0 && NSMaxRange(selection) <= source.length ? source.substring(with: selection).count : 0
         let selectionText = textView.selectedRanges.count > 1 ? "  •  \(textView.selectedRanges.count) cursors" :
             selectedCharacters > 0 ? "  •  \(selectedCharacters) characters selected" : ""

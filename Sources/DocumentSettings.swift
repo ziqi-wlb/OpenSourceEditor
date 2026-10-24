@@ -296,21 +296,8 @@ extension TextOperations {
         return column
     }
     static func position(in text: String, utf16Offset: Int, tabSize: Int) -> (line: Int, column: Int)? {
-        let units = Array(text.utf16)
-        guard tabSize > 0, isBoundary(utf16Offset, in: units) else { return nil }
-        var line = 1, column = 0, previousCR = false
-        for scalar in String(decoding: units.prefix(utf16Offset), as: UTF16.self).unicodeScalars {
-            if scalar.value == 13 { line += 1; column = 0; previousCR = true }
-            else if scalar.value == 10 { if !previousCR { line += 1 }; column = 0; previousCR = false }
-            else {
-                let amount = scalar.value == 9 ? tabSize - column % tabSize : 1
-                let sum = column.addingReportingOverflow(amount)
-                guard !sum.overflow else { return nil }
-                column = sum.partialValue; previousCR = false
-            }
-        }
-        let oneBased = column.addingReportingOverflow(1)
-        return oneBased.overflow ? nil : (line, oneBased.partialValue)
+        let source = text as NSString
+        return DocumentLineIndex(source).position(in: source, utf16Offset: utf16Offset, tabSize: tabSize)
     }
     private static func linePrefix(_ text: NSString, _ offset: Int) -> String {
         var start = 0, end = 0, contents = 0
@@ -321,34 +308,18 @@ extension TextOperations {
     // UTF16 offsets for logical CR/LF lines, including an empty final line.
     // A CRLF pair has one start after the complete pair, never a start at LF.
     static func lineStarts(in text: String) -> [Int] {
-        var starts = [0], previousCR = false
-        for (offset, unit) in text.utf16.enumerated() {
-            if unit == 13 { starts.append(offset + 1); previousCR = true }
-            else if unit == 10 {
-                if previousCR { starts[starts.count - 1] = offset + 1 }
-                else { starts.append(offset + 1) }
-                previousCR = false
-            } else { previousCR = false }
-        }
-        return starts
+        DocumentLineIndex(text as NSString).starts
     }
     static func lineStarts(_ text: NSString, _ selections: [NSRange]) -> [Int] {
-        let allStarts = lineStarts(in: text as String)
-        func index(of offset: Int) -> Int {
-            var lower = 0, upper = allStarts.count
-            while lower < upper {
-                let middle = lower + (upper - lower) / 2
-                if allStarts[middle] <= offset { lower = middle + 1 } else { upper = middle }
-            }
-            return max(0, lower - 1)
-        }
+        let index = DocumentLineIndex(text)
+        let allStarts = index.starts
         var selectedStarts = Set<Int>()
         for selection in selections {
             guard selection.location >= 0, selection.length >= 0, selection.location <= text.length,
                   selection.length <= text.length - selection.location else { continue }
-            let first = index(of: selection.location)
+            let first = index.lineIndex(at: selection.location)
             let finalOffset = selection.length > 0 ? NSMaxRange(selection) - 1 : selection.location
-            let last = index(of: finalOffset)
+            let last = index.lineIndex(at: finalOffset)
             for line in first...last { selectedStarts.insert(allStarts[line]) }
         }
         return selectedStarts.sorted()
@@ -473,12 +444,34 @@ extension TextOperations {
     static func detectedIndentation(in text: String, defaults: DocumentSettings) -> DocumentSettings {
         var result = defaults, spacesRows = 0, tabRows = 0, width = 0
         func gcd(_ a: Int, _ b: Int) -> Int { var x = a, y = b; while y != 0 { let r = x % y; x = y; y = r }; return x }
-        for line in text.components(separatedBy: .newlines) {
-            let prefix = leading(line)
-            guard prefix.count < line.count, !prefix.isEmpty else { continue }
+        let source = text as NSString
+        var beginning = 0, beginsWithIndent = false
+        func considerLine(ending: Int) {
+            guard beginsWithIndent, ending > beginning else { return }
+            let line = source.substring(with: NSRange(location: beginning, length: ending - beginning))
+            let prefix = line.prefix { $0 == " " || $0 == "\t" }
+            guard !prefix.isEmpty, prefix.endIndex < line.endIndex else { return }
             if prefix.contains("\t") { tabRows += 1 }
             else { spacesRows += 1; width = gcd(width, prefix.count) }
         }
+        var offset = 0, buffer = [unichar](repeating: 0, count: 4096)
+        while offset < source.length {
+            let count = min(buffer.count, source.length - offset)
+            source.getCharacters(&buffer, range: NSRange(location: offset, length: count))
+            for index in 0..<count {
+                let position = offset + index, unit = buffer[index]
+                if position == beginning { beginsWithIndent = unit == 32 || unit == 9 }
+                // CharacterSet.newlines, including Unicode newline separators.
+                switch unit {
+                case 10, 11, 12, 13, 0x85, 0x2028, 0x2029:
+                    considerLine(ending: position)
+                    beginning = position + 1
+                default: break
+                }
+            }
+            offset += count
+        }
+        considerLine(ending: source.length)
         if spacesRows > tabRows { result.translateTabsToSpaces = true; if width > 0 { result.tabSize = width } }
         else if tabRows > 0 { result.translateTabsToSpaces = false }
         return result

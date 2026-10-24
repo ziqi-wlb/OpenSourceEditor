@@ -14,7 +14,7 @@ enum EditorFailure: LocalizedError {
     }
 }
 
-final class EditorDocument: NSObject {
+final class EditorDocument: NSObject, NSTextStorageDelegate {
     let storage: NSTextStorage
     let undoManager = UndoManager()
     private(set) var fileURL: URL?
@@ -24,9 +24,36 @@ final class EditorDocument: NSObject {
     private var diskDigest: Data?
     var diskDigestHex: String? { diskDigest?.map { String(format: "%02x", $0) }.joined() }
     private var savedText: String
+    private var cachedTextModified: Bool? = false
+    private var cachedLineIndex: DocumentLineIndex?
+    private var cachedHighlights: (syntax: String, value: SyntaxHighlights)?
     private(set) var diskEncoding = EditorEncoding.utf8
     var displayName: String { fileURL?.lastPathComponent ?? "Untitled" }
-    var isModified: Bool { encoding != diskEncoding || !storage.string.utf16.elementsEqual(savedText.utf16) }
+    var isModified: Bool {
+        if encoding != diskEncoding { return true }
+        if let cachedTextModified { return cachedTextModified }
+        let source = storage.string as NSString
+        let changed = source.length != (savedText as NSString).length || source.compare(savedText, options: .literal) != .orderedSame
+        cachedTextModified = changed
+        return changed
+    }
+    var lineIndex: DocumentLineIndex {
+        if let cachedLineIndex { return cachedLineIndex }
+        let index = DocumentLineIndex(storage.string as NSString)
+        cachedLineIndex = index
+        return index
+    }
+    func position(at offset: Int) -> (line: Int, column: Int)? {
+        lineIndex.position(in: storage.string as NSString, utf16Offset: offset, tabSize: settings.tabSize)
+    }
+    var syntaxHighlights: SyntaxHighlights {
+        let syntax = syntaxIdentifier
+        if let cachedHighlights, cachedHighlights.syntax == syntax { return cachedHighlights.value }
+        let source = storage.length <= 2_000_000 && SyntaxHighlights.supported.contains(syntax) ? storage.string : ""
+        let value = SyntaxHighlights(text: source, syntax: syntax)
+        cachedHighlights = (syntax, value)
+        return value
+    }
     var lineEnding: String { settings.lineEnding.text }
     var encodingDescription: String { encoding.displayName }
     private var resolvedSyntax: EditorSyntax? {
@@ -43,6 +70,17 @@ final class EditorDocument: NSObject {
         self.settings = settings.detectIndentation ? TextOperations.detectedIndentation(in: text, defaults: settings) : settings
         if text.contains("\n") || text.contains("\r") { self.settings.lineEnding = LineEnding.detect(in: text) }
         super.init()
+        storage.delegate = self
+    }
+
+    func textStorage(_ textStorage: NSTextStorage, didProcessEditing editedMask: NSTextStorageEditActions,
+                     range editedRange: NSRange, changeInLength delta: Int) {
+        // Invalidate at the text owner, including native edits, undo and recovery.
+        // Font/paragraph updates do not change these text facts.
+        guard editedMask.contains(.editedCharacters) else { return }
+        cachedTextModified = nil
+        cachedLineIndex = nil
+        cachedHighlights = nil
     }
 
     static func open(_ url: URL, encoding: EditorEncoding? = nil, settings: DocumentSettings = DocumentSettings()) throws -> EditorDocument {
@@ -65,6 +103,7 @@ final class EditorDocument: NSObject {
 
     func checkpoint() {
         savedText = storage.string
+        cachedTextModified = false
         diskEncoding = encoding
         notifyChanged()
     }
@@ -95,6 +134,7 @@ final class EditorDocument: NSObject {
         // Commit only after the complete read and strict decode have succeeded.
         storage.replaceCharacters(in: NSRange(location: 0, length: storage.length), with: text)
         savedText = text; encoding = decodedEncoding; diskEncoding = decodedEncoding
+        cachedTextModified = false
         diskDigest = Data(SHA256.hash(data: data))
         settings.lineEnding = LineEnding.detect(in: text)
         undoManager.removeAllActions()
