@@ -1680,6 +1680,10 @@ final class EditorWorkspace: NSObject, NSWindowDelegate,
     }
 
     @objc private func runBuildAction() {
+        if currentDocument?.syntaxIdentifier == "md" {
+            setMarkdownMode(.preview)
+            return
+        }
         if buildSpec == nil { chooseBuild() }
         guard let buildSpec else { return }
         if let document = currentDocument, document.fileURL != nil, document.isModified,
@@ -1982,7 +1986,11 @@ final class EditorWorkspace: NSObject, NSWindowDelegate,
         if pendingTermination || pendingWindowClose { return menuItem.action == #selector(cancelBuild) }
         switch menuItem.action {
         case #selector(cancelBuild): return isBuildRunning
-        case #selector(runBuildAction), #selector(chooseBuild): return !isBuildRunning
+        case #selector(runBuildAction):
+            let markdown = currentDocument?.syntaxIdentifier == "md"
+            menuItem.title = markdown ? "Render Markdown" : "Run Build"
+            return markdown || !isBuildRunning
+        case #selector(chooseBuild): return !isBuildRunning
         case #selector(runPluginAction), #selector(choosePlugin), #selector(choosePython): return !isPluginRunning
         case #selector(toggleNoteTask), #selector(noteBold), #selector(noteItalic), #selector(noteCode), #selector(noteCodeBlock), #selector(noteLink):
             return markdownViewMode != .preview && currentDocument?.resolvedSyntax == .markdown && currentTextView?.hasMarkedText() == false
@@ -3119,6 +3127,7 @@ final class EditorWorkspace: NSObject, NSWindowDelegate,
         markdownModes.toolTip = "Edit source, read the rendered document, or show both"
         markdownOutline.target = self
         markdownOutline.action = #selector(showMarkdownOutline)
+        markdownOutline.toolTip = "Render Markdown; in preview, navigate headings"
         markdownExport.target = self
         markdownExport.action = #selector(exportMarkdown)
         markdownInfo.font = .systemFont(ofSize: 11)
@@ -3203,7 +3212,11 @@ final class EditorWorkspace: NSObject, NSWindowDelegate,
     @objc private func markdownToSide() { setMarkdownMode(markdownViewMode == .sideBySide ? .edit : .sideBySide) }
 
     @objc private func showMarkdownOutline() {
-        if markdownViewMode == .edit { setMarkdownMode(.sideBySide) }
+        guard currentDocument?.syntaxIdentifier == "md" else { return }
+        if markdownViewMode == .edit {
+            setMarkdownMode(.preview)
+            return
+        }
         if markdownPreview?.isRendering == true {
             pendingMarkdownOutline = currentDocument.map(ObjectIdentifier.init)
             return

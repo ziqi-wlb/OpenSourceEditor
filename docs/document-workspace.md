@@ -4,7 +4,9 @@
 
 Markdown extensions `.md`, `.markdown`, `.mdown` and `.mkd` share the same toolbar. **Edit**, **Preview** and **Side by Side** are remembered per open document. The source buffer, selections and native undo history remain available when switching views. Preview uses the current unsaved text. Dark/light editor themes also style the rendered document.
 
-Foundation's native Markdown parser owns block identities, inline attributes and source positions. An HTML adapter handles headings, paragraphs, nested lists, quotes, tables, fenced code, links, emphasis and task checkboxes. Checkboxes display task state and do not edit the source. Code fences show the supplied language and escaped code; they do not run code. Heading navigation opens the matching source line. HTML export embeds the current styling and local images into a standalone page.
+In 0.8.1, clicking **Outline** from Edit directly opens full Preview without a popup. In Preview or Side by Side, Outline opens heading navigation. **⌘B** and **Tools → Render Markdown** use the same preview renderer for Markdown, including unsaved content: no build configuration, compiler, external command or automatic save is involved. Other syntaxes retain the configured build workflow.
+
+Foundation's native Markdown parser owns block identities, inline attributes and source positions. An HTML adapter handles headings, paragraphs, nested lists, quotes, tables, fenced code, links, emphasis and task checkboxes. Checkboxes display task state and do not edit the source. Code fences show the supplied language and escaped code; they do not run code. Heading navigation scrolls the rendered document and selects the matching source line without switching its view mode. HTML export embeds the current styling and local images into a standalone page.
 
 The preview creates a system WKWebView only on request. Explicit preview requests start immediately; subsequent text edits use a 250 ms debounce. Each view owns a serial render queue with cancellation and revision/generation checks. Obsolete results cannot replace a newer document. Foundation's parse call cannot be interrupted mid-call; input bounds limit that work, and adaptation checks cancellation between runs and blocks. Returning to Edit, switching to a plain text document or closing the window cancels work and detaches the preview. Approximate relative scroll position is preserved across updates; source/preview scrolling is not synchronized by source line.
 
@@ -41,6 +43,12 @@ After an unexpected exit, choose **Recover Snapshot in New Window…**. The save
 Saving all modified buffers clears stale snapshot content. Disabling recovery, closing its window or quitting normally queues removal after any pending write, and the application's existing completion path waits for it. A late write cannot recreate a cleaned snapshot. The timer interval and an in-flight write create a recovery gap; atomic file replacement is not a guarantee against hardware/power-loss failure. Recovery does not preserve native undo history.
 
 ## Verification
+
+macOS 0.8.1 passed **557 checks**, with **13 explicitly skipped** contract vectors, in `markdown-render-081-v2`. Its 49 document-workspace UI checks include clicking the actual Outline button, rendering unsaved text without a chooser or save, preserving undo, rendering instead of executing a configured command for Markdown, and executing that same command for another syntax. Menu labels follow the current syntax. The test uses the current text view after tab changes and waits for rendered DOM content; `isLoading == false` alone does not establish that a requested page has loaded. Both macOS architecture slices compiled; native UI checks ran on Apple Silicon.
+
+```sh
+bash tests/run_all.sh markdown-render-verification --ui --arch universal
+```
 
 Production-boundary checks cover parser behavior, local resource rules, project coverage/cancellation and Unicode line/comment semantics. Native UI checks exercise source/preview transitions, current-buffer export, stale render generations, selection navigation, single-undo commands, separate recovery windows and ordered cleanup. A separate process writes through the real recovery queue and exits abruptly; a fresh process validates recovery with changed disk content and corrupt snapshots. Results remain in ignored `.build/test-results/`.
 

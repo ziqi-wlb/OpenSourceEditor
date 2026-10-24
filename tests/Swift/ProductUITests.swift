@@ -6,6 +6,15 @@ private struct ProductExportChooser: EditorFileChoosing {
     func choose(_ panel: NSSavePanel, for parent: NSWindow) -> [URL]? { [url] }
 }
 
+private final class ProductRecordingChooser: EditorFileChoosing {
+    var url: URL?
+    var requests = 0
+    func choose(_ panel: NSSavePanel, for parent: NSWindow) -> [URL]? {
+        requests += 1
+        return url.map { [$0] }
+    }
+}
+
 enum ProductUITests {
     @MainActor static func run(app: EditorAppDelegate, directory: URL) async -> (passed: Int, failed: Int) {
         var passed = 0, failures: [String] = []
@@ -21,6 +30,14 @@ enum ProductUITests {
                 if let error { print("WEB: " + error.localizedDescription) }
                 continuation.resume(returning: result)
             } }
+        }
+        func waitForHeading(_ web: WKWebView, _ title: String) async -> Bool {
+            let end = Date().addingTimeInterval(8)
+            while Date() < end {
+                if await evaluate(web, "document.querySelector('h1')?.textContent") as? String == title { return true }
+                await pump(0.05)
+            }
+            return false
         }
         func capture(_ window: NSWindow, _ filename: String) throws {
             window.contentView?.layoutSubtreeIfNeeded()
@@ -65,12 +82,62 @@ enum ProductUITests {
             workspace.selectDocument(0)
             await pump()
             let document = workspace.currentDocument!
-            let textView = workspace.currentTextView!
+            var textView = workspace.currentTextView!
+            let chooser = ProductRecordingChooser()
+            workspace.fileChooser = chooser
+            func outlineButton(in view: NSView) -> NSButton? {
+                if let button = view as? NSButton, button.title == "Outline" { return button }
+                return view.subviews.lazy.compactMap { outlineButton(in: $0) }.first
+            }
+            let dirtySource = source + "\n\n## Unsaved outline"
+            document.setTextUndoably(dirtySource, actionName: "Outline fixture")
+            textView.setSelectedRange(NSRange(location: 4, length: 3))
+            let button = workspace.window.contentView.flatMap { outlineButton(in: $0) }
+            check("Native Outline button available", button != nil)
+            button?.performClick(nil)
+            check("Outline opens full preview without source pane", workspace.markdownViewMode == .preview && textView.isHiddenOrHasHiddenAncestor)
+            check("Outline renders unsaved heading", await wait { workspace.markdownPreviewForTesting?.page?.headings.last?.title == "Unsaved outline" })
+            check("Outline does not ask for build configuration or save", chooser.requests == 0 && workspace.window.attachedSheet == nil && document.isModified && (try? String(contentsOf: md)) == source)
+            check("Outline preserves source selection", textView.selectedRange() == NSRange(location: 4, length: 3))
+            if let heading = workspace.markdownPreviewForTesting?.page?.headings.last {
+                workspace.selectMarkdownHeading(heading)
+                check("Heading navigation keeps full preview", workspace.markdownViewMode == .preview && document.position(at: textView.selectedRange().location)?.line == heading.line)
+            } else { check("Heading navigation keeps full preview", false) }
+            document.undoManager.undo()
+            check("Outline preserves native undo", document.storage.string == source && !document.isModified)
+            workspace.setMarkdownMode(.edit)
+            _ = workspace.executeCommand("build")
+            check("Markdown build command renders without configuration", workspace.markdownViewMode == .preview && chooser.requests == 0 && workspace.window.attachedSheet == nil)
+            _ = await wait { workspace.markdownPreviewForTesting?.page != nil }
+            let marker = directory.appendingPathComponent("configured-build-ran")
+            let buildConfig = directory.appendingPathComponent("build.json")
+            try JSONSerialization.data(withJSONObject: ["argv": ["/usr/bin/touch", marker.path], "timeoutSeconds": 2]).write(to: buildConfig)
+            chooser.url = buildConfig
+            workspace.activateMenus()
+            let tools = NSApp.mainMenu?.item(withTitle: "Tools")?.submenu
+            let chooseBuild = tools?.items.first { $0.action == NSSelectorFromString("chooseBuild") }
+            check("Native build configuration action available", chooseBuild.map { NSApp.sendAction($0.action!, to: $0.target, from: $0) } == true && chooser.requests == 1)
+            chooser.url = nil
+            let runBuild = tools?.items.first { $0.action == NSSelectorFromString("runBuildAction") }
+            check("Markdown Tools action says Render Markdown", runBuild.map { workspace.validateMenuItem($0) && $0.title == "Render Markdown" } == true)
+            document.setTextUndoably(dirtySource, actionName: "Render fixture")
+            workspace.setMarkdownMode(.edit)
+            check("Native Markdown Tools action dispatched", runBuild.map { NSApp.sendAction($0.action!, to: $0.target, from: $0) } == true)
+            check("Configured Markdown action still renders current buffer", await wait { workspace.markdownPreviewForTesting?.page?.headings.last?.title == "Unsaved outline" })
+            check("Markdown rendering skips configured command and autosave", !FileManager.default.fileExists(atPath: marker.path) && chooser.requests == 1 && document.isModified && (try? String(contentsOf: md)) == source)
+            workspace.selectDocument(1)
+            check("Other syntaxes retain Run Build menu", runBuild.map { workspace.validateMenuItem($0) && $0.title == "Run Build" } == true)
+            _ = workspace.executeCommand("build")
+            check("Configured command still runs for other syntaxes", await wait { FileManager.default.fileExists(atPath: marker.path) })
+            await pump(0.2)
+            workspace.selectDocument(0)
+            textView = workspace.currentTextView!
+            document.undoManager.undo()
             textView.setSelectedRange(NSRange(location: 4, length: 3))
             workspace.setMarkdownMode(.preview)
-            check("Preview finishes", await wait { workspace.markdownPreviewForTesting?.page != nil })
+            check("Preview finishes", await wait { workspace.markdownPreviewForTesting?.page != nil && workspace.markdownPreviewForTesting?.renderedRevision == document.revision })
             if let preview = workspace.markdownPreviewForTesting {
-                check("Actual WebKit document displayed", await wait { !preview.webView.isLoading })
+                check("Actual WebKit document displayed", await waitForHeading(preview.webView, "Markdown Workspace"))
                 let title = await evaluate(preview.webView, "document.querySelector('h1')?.textContent")
                 check("Rendered heading in native web view", title as? String == "Markdown Workspace")
                 check("Table and tasks in DOM", (await evaluate(preview.webView, "document.querySelectorAll('table').length + ':' + document.querySelectorAll('input[type=checkbox]').length")) as? String == "1:3")
