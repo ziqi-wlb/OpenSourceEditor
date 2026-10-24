@@ -11,7 +11,7 @@ def main():
     args=parser.parse_args()
     app=Path(__file__).resolve().parents[1]
     files=[app/p for p in ('README.md','PERFORMANCE.md','plugins.md','Info.plist','build.sh','package.sh','windows/.clang-format')]
-    folders=['Sources','Resources','scripts','windows']+(['tests'] if args.with_tests else [])
+    folders=['Sources','Resources','scripts','windows','docs']+(['tests'] if args.with_tests else [])
     extensions={'.swift','.py','.json','.sh','.cpp','.ps1','.md'}
     for folder in folders:
         files.extend(p for p in (app/folder).rglob('*') if p.is_file() and p.suffix in extensions

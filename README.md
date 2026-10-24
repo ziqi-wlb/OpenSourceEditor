@@ -45,6 +45,8 @@ The release builds only `Sources/*.swift` and whitelisted Python/JSON resources.
 
 TextKit lays out visible text on demand. Each document shares its line index and lexical matches across split panes; text edits invalidate these caches at the storage boundary. Only visible syntax matches are painted, and dirty file labels update without recreating every tab. See [performance measurements and remaining costs](PERFORMANCE.md).
 
+The resource reports cover [optimization principles and measured effects](docs/performance-optimization.md) and [release package size and runtime memory](docs/package-and-memory.md). Both reports are included in the standalone source archives.
+
 This is not a complete Sublime Text replacement. Grammar/snippet engines, full plugin compatibility, LSP, minimap, rectangular selection and project-wide search remain incomplete. The Python SDK runs selected code with the current user's permissions; it is not a sandbox. Windows currently has a smaller feature set.
 
 ## Tests and source package
