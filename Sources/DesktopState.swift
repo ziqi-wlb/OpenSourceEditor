@@ -18,6 +18,9 @@ struct SavedWorkspace: Codable {
     var frame: [Double]
     var scrollY: Double
     var recoveryFileName: String? = nil
+    var tabsVisible: Bool? = nil
+    var statusVisible: Bool? = nil
+    var lineNumbersVisible: Bool? = nil
 }
 
 struct SavedDesktop: Codable {

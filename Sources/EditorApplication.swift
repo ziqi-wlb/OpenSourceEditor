@@ -9,6 +9,7 @@ final class EditorAppDelegate: NSObject, NSApplicationDelegate {
     private let desktopStore: EditorDesktopStore?
     private var startupIssue: String?
     private var closingApplication = false
+    private(set) var projectInformationWindow: ProjectInformationWindowController?
     var recoveryDirectory: URL { desktopStore?.directory.appendingPathComponent("Recovery") ?? EditorRecovery.defaultDirectory }
 
     init(recentFiles: RecentFiles = RecentFiles(), desktopStore: EditorDesktopStore? = .production) {
@@ -100,9 +101,38 @@ final class EditorAppDelegate: NSObject, NSApplicationDelegate {
 
     @objc func newWindowForTab(_ sender: Any?) { newWindow() }
 
+    func addProjectInformationMenuItems(to menu: NSMenu) {
+        for (title, action) in [("About Source Editor", #selector(showProjectInformation)),
+                                ("Release Notes…", #selector(showReleaseNotes)),
+                                ("Contact Author…", #selector(contactAuthor))] {
+            let item = NSMenuItem(title: title, action: action, keyEquivalent: "")
+            item.target = self
+            menu.addItem(item)
+        }
+    }
+
+    private func informationController() -> ProjectInformationWindowController? {
+        if let projectInformationWindow { return projectInformationWindow }
+        do {
+            let controller = ProjectInformationWindowController(information: try ProjectInformation.load())
+            projectInformationWindow = controller
+            return controller
+        } catch {
+            activeWorkspace?.showNotice("Could not load project information: " + error.localizedDescription)
+            return nil
+        }
+    }
+    @objc func showProjectInformation() { informationController()?.show(.about) }
+    @objc func showReleaseNotes() { informationController()?.show(.releases) }
+    @objc func contactAuthor() {
+        if let url = informationController()?.information.contactURL { NSWorkspace.shared.open(url) }
+    }
+
     private func installEmptyWindowMenus() {
         let main = NSMenu()
         let app = NSMenu(title: "Source Editor")
+        addProjectInformationMenuItems(to: app)
+        app.addItem(.separator())
         app.addItem(NSMenuItem(title: "Quit Source Editor", action: #selector(NSApplication.terminate(_:)), keyEquivalent: "q"))
         let file = NSMenu(title: "File")
         let new = NSMenuItem(title: "New Window", action: #selector(newWindowForTab(_:)), keyEquivalent: "N")

@@ -1,5 +1,7 @@
 # Markdown, project search and recovery
 
+[中文](document-workspace.zh-CN.md)
+
 ## Markdown workspace
 
 Markdown extensions `.md`, `.markdown`, `.mdown` and `.mkd` share the same toolbar. **Edit**, **Preview** and **Side by Side** are remembered per open document. The source buffer, selections and native undo history remain available when switching views. Preview uses the current unsaved text. Dark/light editor themes also style the rendered document.
@@ -50,7 +52,9 @@ See [draft storage, ownership, limits and real quit/restart tests](draft-recover
 
 ## Verification
 
-macOS 0.9.2 passed **616 checks**, with **13 explicitly skipped** contract vectors, in `preview-sidebar-092`. Its 53 document-workspace UI checks verify that Preview begins with the source heading without generated Contents, source-written fragment links navigate through native mouse events and HTML export omits the inserted directory. Sidebar checks exercise nested Unicode paths, collapsing/re-expanding ancestors, scrolling an offscreen row, retained editor focus, other expanded directories, hiding/showing the sidebar and files outside the project. Universal release slices compiled; the Intel version entry passed under Rosetta; native GUI checks ran on Apple Silicon. The matching production-source hashes are recorded with the acceptance results. Large-directory latency and runtime memory were not remeasured for these changes. The records below are historical.
+macOS 0.9.3 passed **646 checks**, with **13 explicitly skipped** contract vectors, in `bilingual-focus-093-verified`. The 79 document-workspace UI checks retain Markdown coverage and add native fullscreen/focus restoration, independent visibility controls, original-layout persistence, bilingual project/release windows and viewport-bound long-text reflow. The broader gate covers empty-workspace information menus and old layout metadata. Both Universal slices compiled, the x86_64 version entry passed under Rosetta, and native GUI execution ran on Apple Silicon. Source/binary digests and screenshots match this release. See [layout behavior](layout.md); resource measurements below remain tied to their historical versions.
+
+Historical macOS 0.9.2 passed **616 checks**, with **13 explicitly skipped** contract vectors, in `preview-sidebar-092`. Its 53 document-workspace UI checks verify that Preview begins with the source heading without generated Contents, source-written fragment links navigate through native mouse events and HTML export omits the inserted directory. Sidebar checks exercise nested Unicode paths, collapsing/re-expanding ancestors, scrolling an offscreen row, retained editor focus, other expanded directories, hiding/showing the sidebar and files outside the project. Universal release slices compiled; the Intel version entry passed under Rosetta; native GUI checks ran on Apple Silicon. The matching production-source hashes are recorded with the acceptance results. Large-directory latency and runtime memory were not remeasured for these changes. The records below are historical.
 
 macOS 0.8.2 passed **560 checks**, with **13 explicitly skipped** contract vectors, in `markdown-render-082-verified`. Its 52 document-workspace UI checks cover Outline in Edit, Preview, Side by Side, during rendering and on notes without headings; repeated clicks retain the same preview and preserve source selection. Native mouse events verify Contents scrolling. Current-page loading, theme changes, HTML export, cancellation, source edits and undo also pass. Universal release slices compiled; native UI checks ran on Apple Silicon. The following 0.8.1 record is historical.
 

@@ -1,0 +1,114 @@
+{
+  "author": "ziqi-wlb",
+  "email": "550461053@qq.com",
+  "overview": {
+    "english": "Source Editor is an independently implemented native editor for development, daily work and Markdown notes. macOS uses Swift and AppKit; Windows has a smaller experimental Win32 implementation.\n\nThe application runs locally and its source can be built independently. Features include file tabs, project navigation, search, multi-selection, split editing, dark/light themes, encoding and indentation controls, Markdown preview, draft recovery and explicit Python extensions.\n\nFamiliar editor workflows guide the design. This application does not contain Sublime Text's engine and does not claim full Sublime or VS Code compatibility. See the bilingual project documentation for implementation, measured performance and remaining acceptance work.\n\nUse Contact Author to open a draft in your system email application. No message is sent automatically.",
+    "chinese": "Source Editor 是独立实现的原生编辑器，面向开发、日常工作和 Markdown 笔记。macOS 使用 Swift 与 AppKit；Windows 是功能较少的 Win32 实验实现。\n\n应用在本地运行，源码可独立编译。支持文件标签、项目导航、搜索、多选、拆分编辑、深浅主题、编码和缩进设置、Markdown 预览、草稿恢复，以及显式执行的 Python 扩展。\n\n熟悉的编辑器工作流用于指导交互设计。应用不包含 Sublime Text 的原生引擎，也不声称完整兼容 Sublime 或 VS Code。实现原理、实测性能和待验收范围见项目的中英文文档。\n\n点击“联系作者”会在系统邮件应用中打开草稿，不会自动发送邮件。"
+  },
+  "releases": [
+    {
+      "version": "0.9.3",
+      "changes": [
+        {
+          "english": "Add bilingual project documentation, with language links for usage, architecture, development, extensions, performance and validation.",
+          "chinese": "提供中英文项目文档，为使用、架构、开发、扩展、性能与验收说明增加语言切换链接。"
+        },
+        {
+          "english": "Add a native project introduction with author contact information and English/Chinese switching.",
+          "chinese": "增加原生项目介绍窗口、作者联系方式与中英文切换。"
+        },
+        {
+          "english": "Show release notes offline from the application menu, including when no editor window is open.",
+          "chinese": "通过应用菜单离线查看版本说明，关闭所有编辑窗口后仍可访问。"
+        },
+        {
+          "english": "Add independent sidebar, file-tab, status and line-number visibility controls, with normal layout restored on restart.",
+          "chinese": "增加侧栏、文件标签、状态栏和行号独立显示开关，重启恢复正常布局。"
+        },
+        {
+          "english": "Add Focus Mode with native fullscreen, automatic menu/Dock hiding and Escape restoration of the prior layout.",
+          "chinese": "增加专注模式，原生全屏自动隐藏菜单和 Dock，Escape 恢复原布局。"
+        }
+      ]
+    },
+    {
+      "version": "0.9.2",
+      "changes": [
+        {
+          "english": "Follow the active project file in the sidebar: expand ancestors, select and scroll to the file while preserving editor focus.",
+          "chinese": "左侧项目树跟随当前文件，展开祖先目录、选中并滚动定位，保持编辑焦点。"
+        },
+        {
+          "english": "Keep other folders expanded and follow the current file when a hidden sidebar is shown again.",
+          "chinese": "保留其他目录的展开状态，隐藏侧栏再次显示时定位当前文件。"
+        },
+        {
+          "english": "Start Markdown preview and HTML export directly with the document body; retain source-written fragment links.",
+          "chinese": "Markdown 预览与 HTML 导出直接显示正文，保留文档自身的锚点链接。"
+        }
+      ]
+    },
+    {
+      "version": "0.9.1",
+      "changes": [
+        {
+          "english": "Share document display styles and reuse the active pane to reduce redundant text restyling.",
+          "chinese": "共享文档显示样式并复用当前编辑视图，减少重复文本样式更新。"
+        },
+        {
+          "english": "Use labelled native icon buttons and preserve imported session files.",
+          "chinese": "使用带说明的原生图标按钮，保留导入的外部 session 原文件。"
+        }
+      ]
+    },
+    {
+      "version": "0.9.0",
+      "changes": [
+        {
+          "english": "Keep independent drafts on normal close and restore unfinished files and untitled notes after restart.",
+          "chinese": "正常关闭时保留独立草稿，重启恢复未完成文件与未命名笔记。"
+        },
+        {
+          "english": "Add explicit discard/revert, backup failure retry and persistent installed-font preferences.",
+          "chinese": "支持明确丢弃与恢复原件、备份失败重试，以及已安装字体偏好持久化。"
+        }
+      ]
+    },
+    {
+      "version": "0.8.2",
+      "changes": [
+        {
+          "english": "Make Outline and the Markdown build shortcut render unsaved content in one step.",
+          "chinese": "Outline 和 Markdown 构建快捷键一键渲染未保存内容。"
+        }
+      ]
+    },
+    {
+      "version": "0.8.0",
+      "changes": [
+        {
+          "english": "Add workspace preferences, file monitoring, sidebar file operations, note templates and bounded asynchronous search.",
+          "chinese": "增加工作区偏好、文件监听、侧栏文件操作、笔记模板与有限额的异步搜索。"
+        }
+      ]
+    },
+    {
+      "version": "0.7.0",
+      "changes": [
+        {
+          "english": "Add Markdown preview, side-by-side reading, HTML export and project-wide literal search.",
+          "chinese": "增加 Markdown 预览、并排阅读、HTML 导出和项目字面搜索。"
+        }
+      ]
+    },
+    {
+      "version": "0.6.2",
+      "changes": [
+        {
+          "english": "Add a user-directory installer and Finder Markdown file associations for the Universal macOS application.",
+          "chinese": "Universal macOS 应用增加用户目录安装器和 Finder Markdown 文件关联。"
+        }
+      ]
+    }
+  ]
+}

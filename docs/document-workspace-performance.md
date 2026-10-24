@@ -1,5 +1,7 @@
 # Document workspace performance and resources
 
+[中文](document-workspace-performance.zh-CN.md)
+
 This report covers the macOS 0.7.0 Markdown/search/recovery work. Earlier text-engine measurements remain in [performance optimization](performance-optimization.md) and the historical [package report](package-and-memory.md). New preview capabilities have no equivalent pre-0.7.0 baseline.
 
 ## Work ownership and avoided costs

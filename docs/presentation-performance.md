@@ -1,73 +1,75 @@
-# 0.9.1 界面呈现与多文件性能
+# 0.9.1 presentation and multi-file performance
 
-本轮围绕切换标签时的卡顿、样式更新和高频小按钮做了针对性调整。测量为 Apple Silicon、macOS 14.2.1、本地 Swift 5.10 的隔离 GUI 测试进程；每个场景新进程，同一生成 fixture，无文件系统冷缓存保证。性能驱动器以 20 ms Timer 观测主事件循环；峰值是轮询采样 RSS，不是瞬时精确峰值。
+[中文](presentation-performance.zh-CN.md)
 
-## 卡顿来源和结构调整
+This change targets tab-switch stalls, display styles and frequent small controls. Measurements use isolated GUI processes on Apple Silicon, macOS 14.2.1, Swift 5.10. Each case starts fresh with matching generated fixtures; filesystem caches are not guaranteed cold. A 20 ms timer observes the main event loop. RSS peaks are sampled, not continuous maxima.
 
-同一批八个 256 KiB UTF-8 文本文件的工作流会创建文档、切换各页并关闭回归窗口。源码审查和基准显示，每次呈现新 pane 时，编辑器会在主线程给完整 `NSTextStorage` 写入字体和段落属性；切换还会销毁、重建 pane。存储自身共享，因此重复的全量样式应用和 view/layout 生命周期构成明显 UI 成本。每次打开还同步读取并解码文件，首次布局也仍在主线程。
+## Cause and structural changes
 
-现在 `EditorDocument` 记录当前应用的字体、段落和基础前景色；相同样式不会对整段 storage 再写属性。编辑视图仍单独设置输入属性、主题背景、滚动行为和视口语法高亮。重复选择当前标签时保留 pane、选区和滚动位置。字体、Tab 宽度或主题发生变化时仍重新应用相应显示样式。
+An eight-file workflow opens 256 KiB UTF-8 documents, switches tabs and closes. Source review/workloads show that every new pane formerly applied font/paragraph attributes to the complete `NSTextStorage` on the main thread; switches destroyed/recreated panes. Shared storage made repeated full styling and view/layout lifetimes costly. Reads/decoding and initial layout are still synchronous.
 
-| 同一基准中的阶段 | 调整前 elapsed / CPU | 最终固定源码 elapsed / CPU |
+`EditorDocument` now owns the applied font, paragraph and base foreground style. Matching styles skip full storage updates. Views still own typing attributes, backgrounds, scrolling and viewport highlighting. Reselecting the current tab retains its pane, selections and scroll. Font/tab-width/theme changes apply the required new styles.
+
+| Matched workload phase | Before elapsed / CPU | Final source elapsed / CPU |
 | --- | ---: | ---: |
-| 第 1 轮打开八页 | 647.94 / 578.50 ms | 555.70 / 467.58 ms |
-| 第 1 轮连续切换 | 424.58 / 384.19 ms | 206.26 / 169.67 ms |
-| 第 1 轮关闭八页 | 706.23 / 631.13 ms | 131.78 / 100.71 ms |
-| 第 2 轮打开八页 | 631.62 / 567.59 ms | 485.45 / 446.39 ms |
-| 第 2 轮连续切换 | 433.57 / 380.98 ms | 203.83 / 153.35 ms |
-| 第 2 轮关闭八页 | 678.31 / 623.51 ms | 150.53 / 107.35 ms |
+| Round 1: open eight tabs | 647.94 / 578.50 ms | 555.70 / 467.58 ms |
+| Round 1: switch tabs | 424.58 / 384.19 ms | 206.26 / 169.67 ms |
+| Round 1: close tabs | 706.23 / 631.13 ms | 131.78 / 100.71 ms |
+| Round 2: open eight tabs | 631.62 / 567.59 ms | 485.45 / 446.39 ms |
+| Round 2: switch tabs | 433.57 / 380.98 ms | 203.83 / 153.35 ms |
+| Round 2: close tabs | 678.31 / 623.51 ms | 150.53 / 107.35 ms |
 
-这是相同机器、大小和工作流的定向源码前后比较，不是统计学多机结论。多文件最大 heartbeat 延迟从 1,137 ms 降到 603 ms（约减少 47%）；RSS 采样峰值约为 121.25 / 119.28 MiB，差异很小，不作为内存优化收益。切换视图仍有接近 0.2 s 的批量阶段开销，文件载入也仍同步。本调整改善了已测路径，不代表所有打开序列都无停顿。
+These are matched machine/size/workflow runs, not statistical multi-machine evidence. Maximum multi-file heartbeat decreased 1,137→603 ms, about 47%. Sampled RSS peaks were 121.25/119.28 MiB, a small difference not claimed as memory savings. Switching still has roughly 0.2-second batch phases and loading is synchronous; this does not promise stall-free opening sequences.
 
-单文件 1 MiB 对比中，首次 native open 为 154.58 / 135.50 ms（elapsed / CPU），最终固定源码为 142.86 / 128.44 ms。EOF 输入约 18.87 / 16.63 与 18.27 / 17.06 ms；撤销约 13.64 / 12.70 与 15.17 / 13.25 ms；输入与撤销变化很小，不能声称所有编辑操作加速。工作区打开后等待视图稳定、滚动帧率、冷磁盘、真实 trackpad 惯性和更大项目尚未重新全面测量。
+For 1 MiB, native open was 154.58/135.50 ms elapsed/CPU before and 142.86/128.44 ms after. EOF input was 18.87/16.63 versus 18.27/17.06 ms; undo 13.64/12.70 versus 15.17/13.25 ms. These small changes do not establish faster editing generally. Settled-layout latency, actual wheel/inertia/frame timing, cold disk and larger projects were not fully remeasured.
 
-原始证据在忽略目录 `.build/performance/style-090-before/` 和 `.build/performance/polish-091-release-final/`。二者 workload/source SHA 可在 manifest 中核对。调整前来自提交 `84ebe43` 加已验证的外部导入修正；最终测量在完整 gate 结束后串行执行，没有同时运行构建或其他本任务 GUI 探针。测试应用编译同一生产源码，完整版本为 0.9.1，测试入口不包含在 release 内。workload SHA-256 为 `7ad73134d5e0ff1e464cac022f1e02fd2268f15114b690045df0e8f3c0c744d1`；最终生产源码 SHA-256 为 `2e25555773a68a3e3e58cd27b0212da4018084f64a47204a762714922c2503f4`。多文件两轮关闭后 document/storage/view/layout 的弱引用都归零；它不证明所有长期使用路径均无泄漏。
+Raw evidence is `.build/performance/style-090-before/` and `.build/performance/polish-091-release-final/`. Manifests retain workload/source hashes. Before is `84ebe43` plus the verified import preservation fix; final measurements ran serially after acceptance, without concurrent builds/probes. The test app uses the same 0.9.1 production source; measurement dispatch is excluded from release. Workload SHA-256: `7ad73134d5e0ff1e464cac022f1e02fd2268f15114b690045df0e8f3c0c744d1`. Final production aggregate: `2e25555773a68a3e3e58cd27b0212da4018084f64a47204a762714922c2503f4`. All document/storage/view/layout weak references were nil after both rounds; this does not prove all prolonged paths leak-free.
 
-## 字体、主题和图标
+## Fonts, themes and icons
 
-代码编辑器使用用户选择的已安装等宽字体；不打包字体文件。字号与字体族属于展示偏好，不改写源文本或其编码。字体菜单首选系统等宽、Menlo、Monaco、Courier New，缺失时仍采用系统等宽字体回退。暗色/浅色主题更改会刷新文档基础前景色和控件外观。
+Editors use selected installed monospace fonts, with no bundled font files. Family/size are display preferences and do not alter source or encoding. Choices include system monospace, Menlo, Monaco and Courier New, with system fallback. Dark/light changes refresh base foreground and controls.
 
-标签关闭、通知、查找前进/后退和输出面板关闭按钮采用 macOS SF Symbols；按钮同时提供稳定的 hover 提示和 VoiceOver 名称。侧栏文件/文件夹图标也由系统提供。应用 Dock 图标继续由源码中的原创矢量图绘制，省略小尺寸的装饰网格/轨道，保留终端符号以便识别。
+Tab close, notices, find navigation and output close use SF Symbols with stable hover descriptions and VoiceOver names. Sidebar icons also come from the system. The Dock icon is original vector drawing with simplified small grids/orbits and a recognizable terminal mark.
 
-草稿 UI 检查同时验证字体选择不修改内容、字体偏好落盘，标签图标具有可访问名称。产品 UI 检查生成浅色主题预览截图：`.build/test-results/polish-091-release/product-ui-artifacts/markdown-side-by-side-light.png`。暗色路径已有单独 Markdown 与编辑器 GUI 回归；仍需在真实显示器、不同缩放比例、VoiceOver 和多语言系统上人工验收。
+Draft UI checks verify unchanged text and persisted font choices; tab controls have accessible names. Light preview screenshot: `.build/test-results/polish-091-release/product-ui-artifacts/markdown-side-by-side-light.png`. Dark editor/Markdown paths have separate regressions. Real displays, scaling, VoiceOver and multilingual systems still need manual acceptance.
 
-## 重跑
+## Reproduction
 
 ```sh
 python3 tests/run_performance.py style-090 --no-build --cases file:1048576 multiple:262144 --cycles 2
 python3 tests/run_tests.py polish-091-release --ui --arch universal
 ```
 
-## 0.9.1 发布包与运行资源
+## Release package and runtime
 
-Universal 发布程序实际包含 arm64 与 x86_64 切片；x86_64 的版本入口在 Rosetta 下执行成功，未替代 Intel 实机 UI 验证。
+Universal contains arm64/x86_64. The Intel version entry passed under Rosetta; physical Intel GUI remains unverified.
 
-| 内容 | 字节 |
+| Artifact | Bytes |
 | --- | ---: |
-| ZIP 下载包 | 1,994,679 |
-| 安装普通文件逻辑总量 | 4,359,637 |
-| 普通文件分配块 | 4,390,912 |
+| ZIP download | 1,994,679 |
+| Installed regular-file bytes | 4,359,637 |
+| Allocated regular-file blocks | 4,390,912 |
 
-发行程序 SHA-256 为 `bb61028b89846c68fda85cf02ae5f740f488336241745eed99f1309800907c7c`，ZIP 内摘要一致。安装普通文件约 4.16 MiB，ZIP 约 1.90 MiB。目录、xattr 和 APFS 共享块未统计。
+Release SHA-256: `bb61028b89846c68fda85cf02ae5f740f488336241745eed99f1309800907c7c`, matching ZIP contents. Regular files total about 4.16 MiB, ZIP 1.90 MiB; directories/xattrs/APFS shared extents are excluded.
 
-独立复制 bundle 使用相同 release Mach-O 和唯一 identity，等待至少 5 秒后以 PID 验证自有窗口。没有编辑、滚动或 Markdown 预览，和上面的测试应用工作负载不可混用。
+Copied bundles use the identical release Mach-O and isolated identities, wait at least five seconds and verify PID-owned windows. No editing, scrolling or preview; these rows cannot be mixed with test-app workloads above.
 
-| 场景 | RSS | Physical footprint | 累计 CPU |
+| Case | RSS | Physical footprint | Accumulated CPU |
 | --- | ---: | ---: | ---: |
-| 空窗口 | 45.70 MiB | 25.90 MiB | 0:00.19 |
-| 64 KiB 文本文件 | 57.48 MiB | 58.90 MiB | 0:00.30 |
+| Empty window | 45.70 MiB | 25.90 MiB | 0:00.19 |
+| 64 KiB text file | 57.48 MiB | 58.90 MiB | 0:00.30 |
 
-RSS 与 footprint 使用不同系统口径；共享页、压缩页和采样时点会造成两者大小不同。不能用两个独立启动的数值推导每字节增量或宣称相比旧版减少内存。当前副本没有运行预览/WebKit，其他应用和 WindowServer 不计入它的内存。原始证据：`.build/diagnostics/polish-091-release-package/` 和 `.build/diagnostics/polish-091-release-memory/`。
+RSS and footprint use different accounting; shared/compressed pages and timing can change their relative sizes. Separate launches cannot establish per-byte increments or reduced memory versus older versions. No WebKit preview runs; other apps/WindowServer are excluded. Evidence: `.build/diagnostics/polish-091-release-package/` and `.build/diagnostics/polish-091-release-memory/`.
 
-## 验证口径
+## Validation scope
 
-最终固定源码 gate `polish-091-release` 为 **604 项通过、13 项明确跳过**，其中 26 项草稿/字体/图标 UI、15 项真实退出重启和 207 项综合原生 UI。elapsed 合计约 222 秒，源码与发行程序摘要均保存在结果 JSON。程序当前源码摘要与 gate 完全一致；中途被后续代码取代的 gate 已停止，不作为完整验收。agent token 未测量；没有整个验收流程的进程族 CPU/RSS 归因，不报告全流程节省。
+Final `polish-091-release` passed **604 checks with 13 explicit skips**, including 26 draft/font/icon UI, 15 real restart and 207 integrated native UI checks. Elapsed totals about 222 seconds; source/release hashes are retained. Superseded intermediate gates were stopped and excluded. Agent tokens and complete process-family CPU/RSS attribution were not measured.
 
-早期样式缓存样本 heartbeat 为 557 ms；加入标签复用后的样本为 603 ms，重复样本约 610 ms，最终固定源码样本为 603 ms。这说明仍有同步 UI 工作和调度波动。部分中间探针与构建时间重叠，不作为最终空闲基准；以上主要表格与 release 资源表已经采用 gate 完成后串行执行的最终探针。文件系统缓存未清空，也没有固定所有系统后台负载。
+Early style-cache heartbeat was 557 ms; tab reuse samples were 603 ms, repeated about 610 ms and final 603 ms. Synchronous work/scheduling variation remains. Intermediate probes overlapping compilation are excluded; main tables and release rows use serial probes after acceptance. Filesystem caches/background load were not fully controlled.
 
-整个原生工作负载的测量包含 fixture、固定等待、布局、编辑/撤销、滚动及关闭；不是仅文件 I/O。以下 CPU 是 GUI 进程累计 CPU，elapsed 是外部启动器观察的完整任务时间：
+Complete workloads include fixtures, waits, layout, edit/undo, scroll and close, rather than I/O alone. CPU is accumulated GUI process time; elapsed is complete launcher-observed time.
 
-| 场景 | 完整 elapsed 调整前 / 后 | GUI CPU 调整前 / 后 | 采样 RSS 调整前 / 后 |
+| Case | Complete elapsed before / after | GUI CPU before / after | Sampled RSS before / after |
 | --- | ---: | ---: | ---: |
-| 1 MiB 原生编辑/滚动/重开 | 5.81 / 5.54 s | 1.87 / 1.87 s | 103.52 / 106.69 MiB |
-| 两轮八页打开/切换/关闭 | 6.25 / 4.52 s | 3.51 / 1.80 s | 121.25 / 119.28 MiB |
+| 1 MiB native edit/scroll/reopen | 5.81 / 5.54 s | 1.87 / 1.87 s | 103.52 / 106.69 MiB |
+| Two rounds: eight tabs open/switch/close | 6.25 / 4.52 s | 3.51 / 1.80 s | 121.25 / 119.28 MiB |

@@ -1,5 +1,7 @@
 # Product readiness and development stages
 
+[中文](product-readiness.zh-CN.md)
+
 Source Editor is an independent editor. Familiar workflows from Sublime Text and VS Code guide interaction design; their code and assets are not part of the application. macOS and Windows have separate native implementations and separate validation status.
 
 For concrete daily development and note-taking gaps, implementation priorities and scenario acceptance, see [the daily-use analysis](daily-use-gap-analysis.md).
@@ -20,6 +22,10 @@ A stable release requires recoverable file operations, Unicode/IME correctness, 
 | Accessibility | Native controls, named preview/search controls | VoiceOver, keyboard-only and high-contrast manual acceptance |
 
 ## Current implementation stage
+
+macOS 0.9.3 adds bilingual guides, author contact and a native offline release window. Workspace controls hide tabs/status/gutters independently; Focus Mode uses native full screen and restores the previous layout. The matching `bilingual-focus-093-verified` gate passed 646 checks with 13 explicit skips, including long release-text reflow in a narrower native window. Prolonged/manual readiness work remains separate.
+
+macOS 0.9.2 follows active project files and removes automatically inserted preview Contents. Universal acceptance passed 616 checks with 13 explicit skips; GUI execution ran on ARM and the Intel version entry passed under Rosetta.
 
 macOS 0.9.1 makes full-buffer display styles document-owned, reuses the active pane when reselecting a tab, preserves imported session files, and uses labelled native SF Symbols for frequent icon actions. Native Universal acceptance passed 604 checks with 13 explicit skips; final focus verification and source hashes are recorded with the corresponding build. See [presentation performance and validation](presentation-performance.md).
 

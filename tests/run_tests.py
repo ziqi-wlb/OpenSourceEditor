@@ -63,6 +63,7 @@ def main():
     run('release-version', [str(release),'--version'])
     run('release-help', [str(release),'--help'])
     run('portability', [sys.executable,'tests/check_portability.py'])
+    run('documentation', [sys.executable,'tests/check_documentation.py'],style='json')
     run('test-build', ['bash','build.sh','--tests'],timeout=180)
     binary = app/'.build/Source Editor Tests.app/Contents/MacOS/source-editor'
     for kind, flag in [('core','--self-test'),('preferences','--preferences-test'),('document-settings','--document-settings-test'),('product-features','--product-features-test'),('daily-features','--daily-features-test'),('services','--service-test'),('benchmark','--benchmark')]:

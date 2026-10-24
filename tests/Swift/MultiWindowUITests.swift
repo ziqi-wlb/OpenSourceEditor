@@ -168,6 +168,12 @@ enum MultiWindowUITests {
             check("remaining window receives menu actions after close", menuAction("File", "Copy File Path") && NSPasteboard.general.string(forType: .string) == originalDocument?.fileURL?.path)
             first.window.performClose(nil); await pump()
             check("closing last window retains application for Dock reopen", app.workspaces.isEmpty && !app.applicationShouldTerminateAfterLastWindowClosed(NSApp) && ownRunningApps().count == 1)
+            check("Release Notes menu works without an editor workspace", menuAction("Source Editor", "Release Notes…") &&
+                  app.projectInformationWindow?.window?.isVisible == true && app.workspaces.isEmpty)
+            app.projectInformationWindow?.window?.performClose(nil)
+            check("Project introduction works without an editor workspace", menuAction("Source Editor", "About Source Editor") &&
+                  app.projectInformationWindow?.section == .about && app.workspaces.isEmpty)
+            app.projectInformationWindow?.window?.performClose(nil)
             check("New Window menu works without an open workspace", menuAction("File", "New Window")); await pump()
             check("empty application creates a new usable workspace", app.workspaces.count == 1 && app.activeWorkspace?.currentTextView?.isEditable == true)
             app.activeWorkspace?.window.performClose(nil); await pump()

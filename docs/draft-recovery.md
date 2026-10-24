@@ -1,56 +1,55 @@
-# 草稿备份与重启恢复（macOS 0.9.0+）
+# Draft backups and restart recovery (macOS 0.9.0+)
 
-自动备份写入应用自己的恢复目录，**不会覆盖编辑中的原文件**。只有显式 Save / Save All 才写入源文件。已保存文件、项目和显示布局仍由正常工作区状态记录；未保存文本由独立草稿负责。
+[中文](draft-recovery.zh-CN.md)
 
-## 日常使用
+Automatic backups go to the application's recovery directory and **do not overwrite original files**. Only explicit Save/Save All writes source files. Workspace metadata records saved files, projects and layouts; independent drafts own unsaved text.
 
-| 操作 | 结果 |
+## Everyday use
+
+| Action | Result |
 | --- | --- |
-| 默认编辑 | 自动恢复默认开启，每 5 秒检查未保存文档；内容、编码、缩进设置和选区写入独立 JSON |
-| 关闭窗口 / 退出应用 → Keep Drafts | 捕获最后编辑状态，等待写入完成，再关闭；保留原文件 |
-| 下次正常启动 | 自动恢复保留的草稿、未命名笔记，并保留已保存文件页；无需先将笔记另存为文件 |
-| 最后窗口关闭后点击 Dock | 同样重新加载保留的草稿；File → New Window 仍创建新工作区 |
-| 关闭 → Save All | 正常保存文件；未命名文件显示保存对话框，取消或保存失败会中止关闭 |
-| 关闭 → Discard Drafts | 删除当前窗口的恢复数据，不写入原文件；下次读取磁盘原文件 |
-| 关闭 → Cancel | 留在当前编辑器，缓冲区和编辑能力继续可用 |
-| 恢复后 File → Revert File… | 确认后丢弃当前文件草稿，重新读取磁盘文件，并清除该文件的备份内容 |
-| File → Recovery → Find Recovery Snapshots | 每个快照提供 Restore Drafts、Discard Drafts and Open Originals、Later；Later 不删除备份 |
-| 单独关闭文件页 | 保留原来的 Save / Don't Save / Cancel 语义；Don't Save 明确丢弃该页，并更新恢复快照 |
+| Default editing | Recovery is enabled; every 5 seconds checks unsaved documents and writes text, encoding, indentation and selections to independent JSON |
+| Close/Quit → Keep Drafts | Capture final edits, wait for writing, then close; originals remain unchanged |
+| Next normal launch | Restore retained drafts, untitled notes and saved tabs, without requiring notes to be named first |
+| Dock reopen after last window closes | Reload retained drafts; File → New Window creates a fresh workspace |
+| Close → Save All | Save files; untitled files use a chooser; cancellation/failure cancels close |
+| Close → Discard Drafts | Delete this workspace's recovery data without writing originals; next launch reads disk files |
+| Close → Cancel | Keep the editor and its buffers editable |
+| Recovery → File → Revert File… | Confirm discard, reload disk and remove that file's draft content |
+| File → Recovery → Find Recovery Snapshots | Restore Drafts, Discard Drafts and Open Originals, or Later; Later retains the backup |
+| Close one tab | Existing Save / Don't Save / Cancel semantics; Don't Save explicitly discards that tab and updates recovery |
 
-“保留草稿”即使关闭了周期自动恢复也可使用。关闭周期恢复会清理该窗口已有的自动快照；如仍要保留当前编辑，请在关闭时选 Keep Drafts，或手动 Save Session。
+Keep Drafts also works with periodic recovery disabled. Disabling periodic recovery cleans that window's automatic snapshot; retain current work using Keep Drafts or manual Save Session.
 
-## 存储与所有权
+## Storage and ownership
 
-默认目录为 `~/Library/Application Support/Source Editor/Recovery/`，每个工作区拥有一个随机命名的 JSON 文件。父目录权限为 `0700`，快照为 `0600`。工作区元数据和偏好位于上级目录，更新前保留 `.previous`；JSON 采用原子替换。
+The default is `~/Library/Application Support/Source Editor/Recovery/`, with one randomly named JSON per workspace. Directory permissions are `0700`, snapshots `0600`. Preferences/workspace metadata live one level above and retain `.previous`; JSON replacement is atomic.
 
-`EditorRecovery` 拥有串行后台队列。正常写入期间的新请求合并为最后一份待写状态；关闭时停止周期计时器，冻结编辑并捕获最终快照。最终状态覆盖尚未开始的周期请求，等待正在进行的写入后再持久化。关闭完成回调解除活跃快照登记，应用等所有窗口完成后才真正退出。保留与删除共用队列，避免旧写入在丢弃后重新生成文件。
+`EditorRecovery` owns a serial background queue. Requests arriving during a write coalesce into the latest pending state. Close stops the timer, freezes editing and captures the final snapshot, replacing a periodic request that has not started. It waits for an active write before persisting. Final completion deregisters the live snapshot; the app waits for all windows before quitting. Retain/delete use the same queue, preventing an old write from resurrecting discarded data.
 
-`EditorSession` 的可选 `closedNormally` 标记区分明确保留的正常退出草稿与异常退出快照。正常启动自动恢复前者；后者通过启动提示和 Recovery 菜单由用户选择。可选工作区信息记录项目、文件页和显示状态；旧版 session 和恢复文件仍可读取。`SavedWorkspace.recoveryFileName` 只允许单个 JSON 文件名，关联正常工作区和独立草稿。
+Optional `EditorSession.closedNormally` distinguishes explicitly retained normal-close drafts from abnormal-exit snapshots. Startup restores the former; notices/Recovery offer the latter for user selection. Optional workspace metadata carries project/tab/display state; older sessions remain readable. `SavedWorkspace.recoveryFileName` permits one JSON filename linking the workspace and independent draft.
 
-恢复时先校验源文件的 SHA-256 与备份记录。原文件未变更时，草稿保留文件路径，并仍标记为未保存；文件变更或丢失时，草稿成为未命名文档。已恢复的草稿必须写入新的独立备份后，才删除应用恢复目录中的旧备份，避免恢复中断导致唯一副本消失。手动选择的外部 session 文件会保留原始字节；后续自动备份写入应用自己的恢复目录，不在导入文件旁创建或覆盖备份。
+Recovery checks originals' SHA-256. Unchanged originals retain paths and unsaved status; changed/missing originals become untitled documents. Recovered text is backed up to a new owned file before deleting the old owned backup. Imported external sessions retain their original bytes; subsequent automatic backups use the owned recovery directory, not the imported file's parent.
 
-选择丢弃并打开原文件时，先读取所有有路径的源文件；读取失败保留备份并报告错误。未命名草稿没有磁盘原件，丢弃会删除其内容。损坏快照不自动删除。备份写入失败会取消关闭，重新允许编辑，并保留快照所有权，可解决磁盘问题后重试。
+Discard-and-open-originals reads every named source first. Read failure retains the backup and reports an error. Untitled drafts have no original and their content is discarded. Corrupt backups are retained. Write failure cancels close, enables editing and retains ownership for retry.
 
-## 容量与边界
+## Limits
 
-- 每个窗口最多自动备份 128 个修改文档、合计 4 Mi UTF-16 单位，编码后的 session 上限为 32 MiB；未修改的大文件不复制到草稿数据。
-- 容量或写入失败显示通知，保留上一次成功快照；关闭时不能把旧快照当作最新备份。可选择 Save All、手动 Save Session 或明确丢弃。
-- 每 5 秒的自动检查存在崩溃恢复间隔。正常关闭会补写最终状态，但原子替换不代表断电后的硬件持久性保证。
-- 文本、选区、编码和文档设置可恢复；原生 undo 历史不跨进程保存。
-- 这是 macOS 功能。Windows 原生版本尚未实现同等的草稿退出与重启恢复。
+- Per window: at most 128 modified documents, 4 Mi UTF-16 units combined, and 32 MiB encoded session. Clean large files are not copied into drafts.
+- Capacity/write errors notify and preserve the previous successful snapshot. Close cannot treat it as final; choose Save All, manual Save Session or explicit discard.
+- The 5-second interval leaves a crash-recovery gap. Normal close writes final state; atomic replacement is not a power-loss hardware durability guarantee.
+- Text, selections, encoding and settings recover. Native undo history is not persisted across processes.
+- This is a macOS feature; Windows does not have equivalent draft quit/restart recovery.
 
-## 验证
+## Validation
 
 ```sh
 bash tests/run_all.sh draft-recovery --ui --arch universal
-# 已构建测试应用时，单独重跑真实进程退出与重启：
 python3 tests/recovery_restart_test.py '.build/Source Editor Tests.app/Contents/MacOS/source-editor'
 ```
 
-`DraftRecoveryUITests` 使用真实原生窗口、关闭确认 sheet 和隔离的临时支持目录，覆盖最后编辑、未命名文档、正常关闭恢复、取消、Revert、丢弃、外部文件变化、损坏备份、磁盘失败及重试。独立 Python 测试启动真实 AppKit 进程、通过 `NSApplication.terminate` 退出，再启动新进程验证两个窗口的文本、干净文件页、选区和源文件未被覆盖。现有异常退出测试继续验证崩溃恢复。
+`DraftRecoveryUITests` uses real windows/sheets and isolated support directories to cover final edits, untitled documents, normal recovery, cancellation, Revert, discard, external changes, corruption, disk failure and retry. Python starts a real AppKit process, quits through `NSApplication.terminate`, then verifies two windows' text, clean tabs, selections and untouched originals in a new process. Abrupt-exit tests remain.
 
-原始日志保存在忽略的 `.build/test-results/`。Universal 编译覆盖 Intel 和 Apple Silicon 的切片；此工作区的原生 UI 测试在 Apple Silicon 执行，未代替 Intel 实机或 Windows GUI 验收。
+Logs stay in `.build/test-results/`. Universal compiles Intel/Apple Silicon slices; GUI tests here run on Apple Silicon, not physical Intel or Windows.
 
-0.9.0 本地 `draft-final` 完整回归通过 598 项检查，13 项明确跳过；新草稿/字体 UI 为 23 项，真实正常退出/重启为 15 项。写入耗时、包大小和运行内存见 [本轮资源报告](release-090-performance.md)。
-
-0.9.1 保留手动导入的外部 session，自动备份仅写入应用自有恢复目录；新增原生 UI 检查确认来源文件字节完全保留。
+Historical 0.9.0 `draft-final` passed 598 checks with 13 explicit skips, including 23 draft/font UI and 15 real normal quit/restart checks. See [resource report](release-090-performance.md). In 0.9.1, imported external sessions remain unchanged; native checks verify exact source bytes while automatic backups use owned storage.

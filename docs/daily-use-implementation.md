@@ -1,125 +1,125 @@
-# 0.8.0：日常编辑和工作笔记
+# 0.8.0 daily editing and work notes
 
-**0.9.0 更新：** 未保存草稿现在默认独立备份，正常关闭后自动恢复；关闭提供 Keep Drafts / Save All / Discard Drafts / Cancel。详见 [草稿恢复机制](draft-recovery.md)。下文 0.8.0 的验证数据是历史记录。
+[中文](daily-use-implementation.zh-CN.md)
 
-这是 [0.7.0 差距分析](daily-use-gap-analysis.md) 第一阶段的实施记录。目标是持续编辑、可靠处理磁盘变化和提高笔记录入效率。macOS 与 Windows 使用独立实现，本报告只描述 macOS；完整产品验收仍见 [就绪清单](product-readiness.md)。
+**0.9.0 update:** independent draft backups are enabled by default and restore after normal close. Keep Drafts / Save All / Discard Drafts / Cancel are available. See [draft recovery](draft-recovery.md). All 0.8.0 validation figures below are historical.
 
-## 使用入口
+This implements the first stage of [0.7.0 gap analysis](daily-use-gap-analysis.md): sustained editing, reliable external-file handling and efficient notes. macOS/Windows are separate implementations; this report covers macOS. See [readiness](product-readiness.md).
 
-| 工作流 | 入口与行为 |
+## Entry points
+
+| Workflow | Behavior |
 | --- | --- |
-| 返回上次工作现场 | 正常退出后无参数启动，恢复项目、文件顺序、选中页、选区、拆分、侧栏、窗口位置、源视图滚动和 Markdown 模式；显式文件/项目参数优先 |
-| 保留偏好 | 字体、主题、默认缩进及配置键绑定写入应用支持目录，再启动读取；单文件设置和磁盘编码分别记录 |
-| 找回异常退出的笔记 | 启用 File → Recovery → Enable Auto Recovery；启动提示遗留快照，Find Recovery Snapshots 手动列出时间和大小，按需加载 |
-| 外部保存与删除 | 自动监听文件变化；干净文件重读，修改过或被删除的文件保留缓冲区并显示 Review 提示；保存继续复核磁盘摘要 |
-| 管理项目文件 | 侧栏行右键 New File/Folder、Rename、Move to Folder、Move to Trash；项目根目录不提供破坏操作 |
-| 写 Markdown | Notes 菜单及命令面板提供会议/日报/待办模板、格式、链接、代码块与时间戳；Enter 续写列表、任务和引用，空项结束列表 |
-| 改任务状态 | 选择任务行，⇧⌘Return；多行统一标记完成或未完成，跳过代码围栏 |
-| 粘贴图片 | 在 Markdown 源视图粘贴 PNG/TIFF；未保存笔记先选择保存位置，创建旁边的 assets/image-UUID.png 并插入相对路径 |
-| 查找和替换 | 查找栏输入防抖，后台扫描；显示匹配数量或 Partial 限制；替换必须完成扫描且文件/查询修订仍一致 |
+| Resume work | Argument-free normal restart restores projects, file order, selected tab/ranges, splits, sidebar, window, source scroll and Markdown mode; explicit file/project arguments take precedence |
+| Preferences | Fonts, themes, default indentation and configured key bindings persist in support storage; file settings/disk encoding are separate |
+| Abnormal-exit notes | Enable Auto Recovery; startup offers abandoned snapshots; Find Recovery Snapshots lists dates/sizes for selection |
+| External save/delete | Monitor events; clean files reload; dirty/missing files retain buffers with Review; saving still rechecks digests |
+| Manage project files | Row context menu New File/Folder, Rename, Move to Folder, Move to Trash; no destructive root actions |
+| Markdown | Notes/palette templates, formatting, links, fences, timestamps; Enter continues lists/tasks/quotes; empty items end them |
+| Tasks | ⇧⌘Return sets selected task lines together, skipping fences |
+| Paste images | PNG/TIFF in Markdown source; untitled notes first choose a path; create sibling assets/image-UUID.png and a relative link |
+| Find/replace | Debounced background scanning; counts or Partial limits; replacement requires complete current-revision scanning |
 
-0.8.0 的正常重启仅记录已有文件身份和显示信息。0.9.0 由独立草稿备份补齐未保存文本和未命名笔记恢复；明确丢弃的内容不会重新出现。手动 Save Session 仍独立存在。
+0.8.0 restart stores saved-file identities/display only; 0.9.0 adds unsaved/untitled drafts. Discarded text does not reappear. Manual Save Session remains independent.
 
-## 所有者和实现原理
+## Ownership and implementation
 
-`DesktopState.swift` 定义有版本的状态结构和磁盘存储。应用所有者加载偏好、无参数启动时重建窗口；工作区负责文件/选区/布局快照。退出先处理所有窗口的未保存确认，再记录工作区、完成后台清理。正常关闭窗口记录剩余窗口，退出中的关闭回调不会把最终状态覆盖成空列表。状态写入采用原子替换；覆盖前保留 `.previous`，读取失败保留原文件并显示提示。
+`DesktopState.swift` owns versioned disk structures. The app loads preferences and reconstructs windows on argument-free launch; workspaces capture files/selections/layout. Quit confirms unsaved windows, records state and completes cleanup. Quit-time close callbacks do not replace final state with an empty list. Writes atomically replace and retain `.previous`; errors preserve originals and notify.
 
-`FileMonitoring.swift` 每个工作区拥有一条原生 FSEvents 流，递归监测项目及外部打开文件的父目录。去掉被上级覆盖的监听根，系统延迟 0.3 秒，再合并 0.3 秒内通知；没有定时全文读取。大量通知或系统丢失事件回退到监听根复核。目录索引保持原有后台限量扫描；重载目录树尽量恢复展开和选择位置。
+`FileMonitoring.swift` owns one FSEvents stream per workspace, recursively monitoring projects and external-file parents. Redundant descendant roots are removed. System latency and notification coalescing are each 0.3 s; there is no timed full-file polling. Event loss/overflow rechecks roots. Background bounded indexing remains, with expanded/selected tree state restored when possible.
 
-文件内容检查在串行后台队列读取、计算 SHA-256 和解码。回到主线程时复核工作区是否关闭、文档是否仍属于该窗口、路径/操作身份和文档修订。干净且未变化的缓冲区接受新磁盘基线，清除原撤销历史，与 Revert 一致；脏缓冲区保留原内容和撤销。通知不是写入授权，Review 提供保留缓冲区/重读入口，覆盖仍受保存冲突检查约束。
+A serial background queue reads, hashes and decodes disk content. Main-thread callbacks recheck closed state, ownership, path/operation identity and document revision. Unchanged clean buffers accept a new baseline and clear undo, matching Revert; dirty buffers preserve text/undo. Events do not authorize writing. Review offers retain/reload, while saves still enforce conflict checks.
 
-`ProjectFileOperations.swift` 在拥有磁盘操作的边界统一验证路径和名称。解析父目录以限制项目范围，最终条目保留为条目身份，避免把移除符号链接变成移除其目标。移动拒绝目标覆盖和移入自身；大小写重命名仅在同一父目录、同一设备/inode 的现有条目时使用唯一临时兄弟路径，失败尝试回滚。目录移动按路径组件更新所有窗口中的文档及最近文件；保留脏内容、磁盘摘要和撤销。移到废纸篓后打开的文本成为未命名缓冲区，不直接删除用户内容。
+`ProjectFileOperations.swift` owns path/name validation. Parent resolution bounds the project; final entries retain entry identity, so removing a symlink cannot remove its target. Moves reject overwrite/self-nesting. Case-only renames use a unique sibling temporary path only for the same parent/device/inode, with rollback on failure. Directory moves update all workspaces' document/recent paths by components, preserving dirty text, digests and undo. Trashed open text becomes untitled rather than being deleted.
 
-`LanguageRules.swift` 将语言识别、支持集合、注释、关键词和缩进规则归于 `EditorSyntax`。补齐 SQL 关键词/注释及 Java、Ruby、TOML 扩展识别；Python 对 def/if/for 等实际块冒号增加一级缩进，排除字符串和注释的冒号。高亮仍是基础正则词法规则，不能据此宣称语法树或完整语言语义。
+`LanguageRules.swift` makes `EditorSyntax` own language recognition, support, comments, keywords and indentation. SQL rules and Java/Ruby/TOML extensions were added. Python block colons such as def/if/for indent while excluding strings/comments. Highlighting is basic regex lexical behavior, not an AST or full semantics.
 
-`NoteEditing.swift` 在 UTF-16 选区边界生成一次文本事务。多个光标共享一次前文围栏扫描，只保留所需行的上下文；围栏关闭必须同符号、长度充分、末尾无内容。任务续写重置为未完成；任务切换跳过围栏内容；格式化保留原选择内容。原生视图在输入法组合态将 Enter 交给 AppKit。源码命令和预览使用同一文档存储，单次撤销恢复文字和选区。
+`NoteEditing.swift` produces one UTF-16 transaction. Multiple cursors share fence context scanning, retaining needed line contexts only. Closing fences require the same symbol, sufficient length and no trailing content. Continued tasks reset to incomplete; task toggles skip fences; formatting preserves selected content. Marked IME Enter stays with AppKit. Source commands/preview share storage; one undo restores text and selections.
 
-`NoteAssets.swift` 通过系统 ImageIO 解码并输出 PNG，唯一文件名避免覆盖，链接使用相对路径。拒绝指向文档目录外的 assets 符号链接；文本事务未应用则清理本次图片。撤销只删除文本链接，保留图片，避免误删其他笔记可能已使用的附件；暂不提供孤立附件自动清理。
+`NoteAssets.swift` uses ImageIO to decode/output uniquely named PNG and insert relative paths. Escaping assets symlinks are rejected; failed text transactions remove their newly created image. Undo removes the link but retains the image to avoid deleting an attachment another note may use. No orphan cleanup is provided.
 
-`SearchEngine.swift` 使用 ICU 的 progress 回调检查取消和截止时间；匹配回调每次检查，空进度回调每 64 次检查以减少系统时钟调用，能停止失败匹配中的回溯。工作区只保留一个活动搜索和一个最新请求，150 ms 防抖到期才截取文本；查询/选项/文档身份/修订共同决定结果适用性。新请求取消旧任务，过期回调不能修改新文档。缓存仅保存当前修订的结果范围。
+`SearchEngine.swift` uses ICU progress callbacks to check deadlines/cancellation, checking matches each time and empty progress every 64 calls to reduce clock reads. This interrupts failed-match backtracking. One active search and one latest request are retained; text capture follows a 150 ms debounce. Query/options/document/revision own applicability; obsolete callbacks cannot change new documents. Cached offsets apply only to the current revision.
 
-替换重新完成限量扫描，然后后台顺序追加未修改片段和替换片段，构造单一 Foundation 字符串事务，避免大量匹配反复移动整段文本。Foundation 捕获组替换分配前以模板长度和捕获范围计算保守扩展上界，累计控制生成文本容量。提交前再复核修订；部分扫描、超时、超限和旧版本均拒绝替换。替换的最终 TextKit 更新和撤销仍在主线程，超大文本的整段提交成本尚未由此消除。
+Replacement completes a bounded scan, then appends unchanged/replacement slices into one Foundation string instead of repeatedly moving the entire text. Conservative template/capture expansion bounds are checked before capture replacement allocation; total output is bounded. Commit rechecks revision; partial, expired, excessive or stale results reject replacement. Final TextKit/undo work remains on the main thread.
 
-### 撤销异常的实测修复
+### Observed undo failure and fix
 
-原生 UI 回归发现：选中 `中文😀`，执行加粗，再撤销，文本已恢复但后续操作无法继续。采样显示应用空闲，不能按 CPU 卡死处理。过滤布局诊断后，LLDB 捕获 `NSTextStorage(NSUndo)` / `NSUndoReplaceCharacters` 的实际异常：`Range {0, 8} out of bounds; string length 4`。
+A native Unicode-bold/undo test restored `中文😀` but later commands stopped working. Sampling showed idle CPU. LLDB, after excluding layout diagnostics, captured an `NSTextStorage(NSUndo)` / `NSUndoReplaceCharacters` exception: `Range {0, 8} out of bounds; string length 4`.
 
-原来的整段命令替换由 `NSTextView.insertText` 建立原生撤销，再在外部更新选区；与文档自身事务形成两套记录。现在笔记格式、任务、图片、查找替换和扩展提交都使用已有 `EditorTextView.applyEditorResult`：先获得原生编辑许可，在关闭原生注册的范围内更新自有文档，记录原文和完整选区的一次逆事务。这样恢复文字和选区由同一个所有者完成，不再让原生范围记录应用到已改变长度的文本。
+Whole-buffer commands had registered `NSTextView.insertText` undo and separately changed selections, duplicating document transactions. Notes, tasks, images, search replacement and extensions now use `EditorTextView.applyEditorResult`: obtain native edit permission, disable native registration while updating the owned document and register one inverse transaction with original text/full selections. One owner restores both, avoiding stale native ranges.
 
-## 资源边界与兼容限制
+## Bounds and compatibility
 
-| 边界 | 行为 |
+| Boundary | Behavior |
 | --- | --- |
-| 偏好/工作区 | 每个 JSON ≤ 1 MiB；≤ 32 窗口、256 个文件；每文件 ≤ 4,096 选区；权限为目录 0700 / 文件 0600 |
-| 快照发现 | 只读取候选元数据，最多列出 128 个；选中后才解析；当前进程活动快照不参与候选；超出数量不保证枚举全部历史 |
-| 自动磁盘检查 | 单文件 ≤ 32 MiB，超限提示不能自动检查；使用之前的磁盘编码，外部改变编码可能需要显式重新打开 |
-| Markdown 编辑 | ≤ 200 万 UTF-16 单位扫描围栏；更大文件 Enter 保留基础缩进，任务切换提示容量限制 |
-| 图片 | 输入 ≤ 16 MiB / 1,600 万像素；输出 PNG ≤ 4 MiB；编码失败与超限分别提示 |
-| 搜索 | 文本 ≤ 800 万 UTF-16 单位；查询 ≤ 4,096 单位；≤ 50,000 匹配、200,000 捕获范围；扫描时间预算 0.5 秒，实际退出取决于 ICU 回调 |
-| 替换 | 模板 ≤ 4,096 单位；保守捕获扩展与生成文本 ≤ 1,600 万 UTF-16 单位；部分搜索拒绝全部或单次替换 |
+| Preferences/workspaces | JSON ≤ 1 MiB; ≤ 32 windows/256 files; ≤ 4,096 ranges per file; directory 0700/file 0600 |
+| Recovery catalog | Metadata-only discovery up to 128 candidates; parse on selection; exclude active owners; listing does not promise all history |
+| Automatic disk check | ≤ 32 MiB/file; report larger files; use previous disk encoding, with explicit reopen for encoding changes |
+| Markdown edits | Fence scan ≤ 2 million UTF-16 units; larger Enter uses basic indent, task commands report capacity |
+| Images | Input ≤ 16 MiB/16 million pixels; PNG ≤ 4 MiB; encoding/capacity errors distinguished |
+| Search | Text ≤ 8 million UTF-16 units; query ≤ 4,096; ≤ 50,000 matches/200,000 capture ranges; 0.5 s budget, interruption depends on ICU callbacks |
+| Replacement | Template ≤ 4,096; conservative capture/output bound ≤ 16 million UTF-16 units; partial scans reject single/all replacement |
 
-隐藏文件/依赖排除维持原有策略，尚未提供 `.gitignore` 或可配置排除。项目搜索仍读取磁盘，未保存缓冲区未进入项目查询。监听是变更提示机制，保存摘要复核仍负责防止覆盖冲突。
+Hidden/dependency exclusions remain; no .gitignore/configurable policy. Project search reads disk, excluding dirty buffers. Monitoring provides notices; save digests prevent overwrite conflicts.
 
-## 验证与性能记录
+## Validation and performance
 
-执行记录与资源测量见下方；性能数值只描述对应数据集与机器，不表示全部文件、语言或长时间任务的表现。测试使用生成的临时项目和独立应用状态；应用包、测试结果、截图和测量原始数据保留在忽略的 `.build/`。正常用户应用和剪贴板不作为测试对象。
+Generated temporary projects/isolated identities are used; artifacts stay in `.build/`. User applications/clipboard are preserved. Figures describe their machines/datasets, not all languages/files or prolonged workloads.
 
-### 最终功能回归
+### Final functional gate
 
-`product-080-final-v2` 使用相同生产源码构建通用发行包和独立 ARM 测试包：**542 项通过、13 项合同向量明确跳过**。包括 55 项新增生产边界检查、37 项新增原生界面检查、204 项原有 UI 检查、34 项 Markdown 工作区检查及真实 NSApplication 多窗口退出检查。
+`product-080-final-v2` builds matching Universal production and separate ARM test apps: **542 passed, 13 explicitly skipped**. Includes 55 new production-boundary checks, 37 new native UI, 204 earlier UI, 34 Markdown UI and real multi-window NSApplication termination.
 
-新增界面覆盖：新应用所有者通过注入独立磁盘目录恢复状态、丢弃文本不进入正常状态、选区和 Markdown 模式恢复、Unicode 加粗撤销/重做、Enter/任务单次撤销、实际 PNG 生成、脏文档重命名/跨窗口目录移动、目标冲突、废纸篓符号链接目标保留、实际 FSEvents 原子保存/删除/新增、无项目恢复后的监听、过期搜索范围拒绝、关闭后回调隔离。快照突然退出/重新读取沿用并通过已有 6 项检查。重启验证是新应用所有者及实际磁盘状态，不是另一 OS 登录或电源故障试验。
+New checks cover injected-store restart, discard exclusion, selection/Markdown restoration, Unicode bold undo/redo, Enter/tasks, actual PNG output, dirty-file rename/cross-window directory moves, target conflicts, symlink-trash target preservation, real FSEvents atomic save/delete/create, monitoring after projectless restore, stale-search rejection and late callbacks after close. Six existing abrupt-exit recovery checks pass. Restart uses a new app owner/real disk state, not a new OS login or power-loss experiment.
 
-病态正则 `(a+)+$` 对 `a × 10,000 + !` 的实测退出为 **0.512 秒**；40,000 处替换生成完整输出为 **15.8 ms**。真实文件原子保存到干净缓冲区重载约 **0.683 秒**，包含系统通知/防抖。在正则仍运行时，安排 80 ms 主队列间隔实际为 **84.8 ms**；这是调度检查，不是实际按键到屏幕的延迟分布。
+Pathological `(a+)+$` on 10,000 a characters plus ! stopped in **0.512 s**. Complete 40,000-match replacement took **15.8 ms**. Atomic external save→clean reload took **0.683 s**, including notifications/debounce. An 80 ms scheduled main-queue interval during regex execution was **84.8 ms**; this is scheduling, not key-to-screen latency distribution.
 
-独立 `editor` Git 子树导出后在新目录构建通过，发行程序 SHA-256 与上述验收完全一致，并执行 9 项服务检查。应用不需要逆向目录、REA、Sublime 安装或工作区外的源码。
+An isolated editor Git-subtree archive built identical release SHA-256 and passed nine service checks, without REA, Sublime, investigation files or outside source.
 
-### 匹配输入的搜索替换前后测量
+### Matched search/replacement measurements
 
-`tests/measure_search.py` 提取提交 `9c719a9` 的原始搜索和文本替换实现，与最终 `SearchEngine.swift` 在相同 Foundation 边界比较。输入为 100 万 UTF-16 单位、1,000 个相同文字匹配；生成文本和所有 1,000 个输出光标逐项相同。每种实现单独启动一次进程，测首次调用与随后两次调用；未清空 OS 缓存。
+`tests/measure_search.py` compares `9c719a9` search/edit code against final `SearchEngine.swift` at the same Foundation boundary: 1 million UTF-16 units, 1,000 matches, identical output and all 1,000 cursor ranges. Separate processes measure first and next two calls; OS caches remain warm.
 
-| 指标 | 0.7.0 算法 | 0.8.0 算法 |
+| Metric | 0.7.0 | 0.8.0 |
 | --- | ---: | ---: |
-| 首次替换 | 20.59 ms | 10.65 ms |
-| 后两次平均 | 17.49 ms | 9.69 ms |
-| 进程用户 CPU，三次及启动 | 0.06 s | 0.03 s |
-| 进程峰值 RSS | 16.25 MiB | 14.50 MiB |
+| First replacement | 20.59 ms | 10.65 ms |
+| Mean of next two | 17.49 ms | 9.69 ms |
+| Process user CPU, three calls/startup | 0.06 s | 0.03 s |
+| Process RSS high water | 16.25 MiB | 14.50 MiB |
 
-暖调用在本数据集约 **1.81 倍**。顺序追加 Foundation 字符串避免逐次移动文本，同时避免中间 UTF-16 数组的构造/解码；进度回调仍存在，空回调每 64 次读取取消和时钟。早期数组方案在同一任务出现回退，已由最终实现替换。测量不包含 TextKit 提交、原生撤销、屏幕绘制或查询输入的 150 ms 防抖，不能直接当作 GUI 提速比例。进程启动总时长受到系统冷启动影响，不作为算法比较依据。
+Warm calls are about **1.81×** faster for this dataset. Sequential Foundation appending avoids repeated movement and intermediate UTF-16-array encoding. Progress checks remain. An earlier array approach regressed and was replaced. TextKit commit, native undo, drawing and 150 ms query debounce are outside these timings; they are not GUI speedups. Process startup varies and is not an algorithm comparison.
 
+### Package and release memory
 
-### 发行包与实际运行内存
+Final regular files: **4,230,221 bytes (4.03 MiB)**; ZIP **1,935,428 (1.85 MiB)**, with identical executable hashes. Executable **3,574,688**, Intel slice 1,784,104, ARM 1,772,448 bytes. Relative to identically inventoried 0.7.0: regular files +16.8%, ZIP +13.9%. Only system frameworks are linked; Universal does not run both slices.
 
-最终通用应用的普通文件合计 **4,230,221 bytes（4.03 MiB）**，ZIP **1,935,428 bytes（1.85 MiB）**；两者可执行文件 SHA-256 一致。可执行文件 **3,574,688 bytes**，x86_64 切片 1,784,104 bytes、arm64 切片 1,772,448 bytes。与历史 0.7.0 同方式包清单相比，应用普通文件增加 **16.8%**、ZIP 增加 **13.9%**。只链接系统框架，没有额外私有运行时；双架构包不代表运行时加载两套架构。
+`measure_release_memory.py` copies the unchanged release, changes diagnostic identity and removes associations. Production state is enabled only for the official identity, isolating user workspaces. Fresh default-window cases sample vmmap/ps near 5/15 seconds without editing/scrolling/preview.
 
-`tests/measure_release_memory.py` 运行未修改的发行 Mach-O，复制包只改变诊断 bundle ID，并移除文件关联。生产状态存储仅对正式应用身份启用，因此这些副本不会读取或写入用户工作区。每个场景使用独立进程、默认窗口，5 秒与 15 秒采集 vmmap/ps；本表是约 15 秒的快照，未编辑/滚动/开启预览。
-
-| 发行工作负载 | Physical footprint | RSS | 累计 CPU |
+| Release workload | Physical footprint | RSS | Cumulative CPU |
 | --- | ---: | ---: | ---: |
-| 空窗口 | 26.3 MiB | 35.67 MiB | 0.19 s |
-| 单个约 1 MiB Swift 文件 | 64.8 MiB | 47.11 MiB | 0.59 s |
-| 8 个约 256 KiB Swift 文件 | 76.0 MiB | 69.27 MiB | 1.36 s |
+| Empty | 26.3 MiB | 35.67 MiB | 0.19 s |
+| One ~1 MiB Swift file | 64.8 MiB | 47.11 MiB | 0.59 s |
+| Eight ~256 KiB Swift files | 76.0 MiB | 69.27 MiB | 1.36 s |
 
-RSS 与 footprint 是不同的系统记账方式，不能相加或将 RSS 降低认定为对象释放。上述 CPU 在 5 秒与 15 秒间没有增加到 0.01 秒的 ps 显示精度；只能说明这一无变更样本未看到持续轮询 CPU，不能证明活跃项目监测没有开销。预览 WebKit 的额外进程未出现在此无预览场景中。
+RSS/footprint cannot be added or equated to object destruction. CPU did not increase at ps's 0.01 s precision between samples, showing little idle polling for these unchanged cases, not zero active-monitoring cost. No WebKit helpers were used.
 
+### Editing, scrolling and repeated closure
 
-### 编辑、滚动与重复关闭
+`daily-080-final-v2` runs separate 1 MiB, four-round eight-file and four-round eight-file edit/undo cases, totaling **64 multi-file lifetimes**. Each cycle leaves nil document/storage/view/layout weak references, with no resource stop/failure. The multi-file cases are separate processes, not one sustained session.
 
-同一最终源码的隔离原生工作负载 `daily-080-final-v2` 分别执行 1 MiB 文件、四轮八文件打开/关闭、四轮八文件编辑/撤销/关闭，共追踪 **64 次多文件文档生命周期**。每轮关闭时文档、存储、文本视图、布局管理器的弱引用均为零；工作负载没有失败或达到资源停止条件。两种多文件工作负载是独立进程，不能合并成一个长时间连续运行测试。
-
-| 工作负载 | 进程采样峰值 RSS | CPU，到最终窗口关闭 | 全程最大主队列 heartbeat 延迟 |
+| Workload | Sampled peak RSS | CPU through final window close | Maximum heartbeat |
 | --- | ---: | ---: | ---: |
-| 1 MiB 文件、编辑/撤销/滚动/重开 | 108.61 MiB | 1.89 s | 209 ms |
-| 32 次文件打开/关闭 | 130.34 MiB | 6.74 s | 1,146 ms |
-| 32 次编辑/撤销/关闭 | 130.67 MiB | 6.42 s | 1,115 ms |
+| 1 MiB edit/undo/scroll/reopen | 108.61 MiB | 1.89 s | 209 ms |
+| 32 file opens/closes | 130.34 MiB | 6.74 s | 1,146 ms |
+| 32 edit/undo/closes | 130.67 MiB | 6.42 s | 1,115 ms |
 
-单文件原生打开返回 **147.8 ms**，到首次布局稳定约 **576 ms**；再次打开返回 **144.0 ms**。EOF 原生编辑 **22.4 ms**、撤销 **15.4 ms**；程序滚动首次访问 8 个位置约 **14–23 ms**，再访问其中已布局位置约 **0.23–3.30 ms**。这些调用不是实际滚轮惯性或 GPU 帧时间。
+Native open returned **147.8 ms**, first settled layout **576 ms**, reopen **144.0 ms**, EOF edit **22.4 ms**, undo **15.4 ms**. First programmatic visits to eight positions took **14–23 ms**, revisits **0.23–3.30 ms**; this is not wheel/inertia/GPU timing.
 
-关闭后的四轮 footprint：普通文件 **54.3 → 50.3 → 51.3 → 48.2 MiB**；带编辑/撤销 **51.0 → 57.8 → 55.7 → 58.8 MiB**。对象已释放但 footprint 保留了一部分分配/系统缓存，不能用 RSS 未回到冷启动值证明泄露，也不能仅凭弱引用测试证明所有路径无泄露。
+Closed footprints: normal **54.3→50.3→51.3→48.2 MiB**, undo **51.0→57.8→55.7→58.8 MiB**. Framework/allocator caches may remain after tracked objects disappear; neither retained RSS nor weak references alone establish whole-app leak conclusions.
 
-**仍有明确性能欠缺：** 现有多文件工作负载在同一主队列连续同步打开/关闭八个文件，最长约 1.1 秒没有调度 heartbeat。单文件搜索已脱离主线程，但多文件打开/布局和整段编辑提交仍需后续优化；本轮没有将它隐藏为“已达到工业级”。普通输入 p95、八小时运行和活跃大项目事件负载尚未测量。
+**Remaining cost:** eight consecutive synchronous main-queue opens/closes still stall heartbeat about 1.1 s. File search moved off-thread, but opens/layout/whole-text commits need further work. Input p95, eight-hour use and large active projects are unmeasured.
 
-### 重跑与证据
+### Reproduction/evidence
 
 ```sh
 bash tests/run_all.sh daily-acceptance --ui --arch universal
@@ -129,17 +129,16 @@ python3 tests/run_performance.py daily-performance --no-build --cases file:10485
 python3 scripts/inspect_package.py '.build/Source Editor.app' .build/diagnostics/daily-package --zip .build/SourceEditor-0.8.0-macos-universal.zip
 ```
 
-独立源码包若没有历史 Git，搜索前后脚本可用 `--baseline-file /path/to/baseline/EditorCore.swift` 指定旧实现。执行环境为 macOS 14.2.1 / Apple Silicon / Apple Swift 5.10；测量执行 ARM 切片，Intel 切片编译和包清单验证不代表 Intel 实机验收。
+Without historical Git, supply `--baseline-file /path/to/baseline/EditorCore.swift` for search comparison. Environment: macOS 14.2.1, Apple Silicon, Swift 5.10; ARM execution and Intel compilation do not establish physical Intel acceptance.
 
-本轮最终原始证据保存在 `.build/test-results/product-080-final-v2`、`.build/diagnostics/search-080-final-v2`、`.build/diagnostics/release-080-idle-v2`、`.build/diagnostics/package-080-final-v2` 和 `.build/performance/daily-080-final-v2`。这些本地测试输出不进入 Git 或公开源码包。
+Evidence: `.build/test-results/product-080-final-v2`, `.build/diagnostics/search-080-final-v2`, `.build/diagnostics/release-080-idle-v2`, `.build/diagnostics/package-080-final-v2`, `.build/performance/daily-080-final-v2`. Local output is excluded from Git/public source.
 
+## Remaining work
 
-## 后续仍需完善
+1. Async multi-file opens/staged layout, main-thread whole-text commits, external diffs and bounded local history; Review currently offers retain/reload.
+2. Image drag/drop, preview task editing, print/PDF, math/Mermaid, cross-note links/tasks.
+3. Rich grammars, bracket pairing, snippets, external formatters, .editorconfig and optional LSP.
+4. Dirty-buffer/project scoped search, ignore policy, replacement previews, build-error navigation, Git and terminal integration.
+5. Real Chinese/Japanese IME/VoiceOver/multiscreen/fullscreen/sleep, eight-hour sessions, Intel/Windows, signing/notarization and updates.
 
-1. 多文件异步打开/分阶段布局、整段提交的主队列开销；外部变化的真实并排差异视图、本地版本历史；当前只有保留/重读 Review。
-2. 图片拖入、预览直接勾选任务、打印/PDF、公式/Mermaid、笔记间链接与任务汇总。
-3. 更完整语言语法、括号配对、片段、外部格式化、`.editorconfig`、可选 LSP 定义/诊断/补全。
-4. 项目未保存文本搜索、选区范围、忽略规则、项目替换预览、任务日志跳转、Git 基础视图与终端衔接。
-5. 实机中文/日文输入法候选窗口、VoiceOver、多屏/全屏/睡眠唤醒、持续八小时工作、Intel 和 Windows 本机验收，以及签名/公证和更新策略。
-
-这些能力不能由已通过的小规模回归推导出来。本轮是可用性与可靠性里程碑，不是完整 Sublime/VS Code 兼容或工业级验收声明。
+Small regressions do not establish these capabilities. This is a usability/reliability milestone, not complete Sublime/VS Code parity or industrial certification.

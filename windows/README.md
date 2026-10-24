@@ -1,5 +1,7 @@
 # Native Windows editor (experimental)
 
+[中文](README.zh-CN.md)
+
 Uses C++17, Win32 and the system RichEdit control. The produced x64 EXE requires no Python, Node or third-party GUI framework. Windows 10/11 is the intended target; native GUI execution remains to be verified.
 
 ## Build and install

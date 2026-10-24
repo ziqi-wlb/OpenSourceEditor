@@ -28,6 +28,13 @@ enum DailyFeatureTests {
                 selections: [[1, 0]], markdownMode: "sideBySide")], selectedPath: nil, projectPath: directory.path, split: true, sidebarVisible: true, frame: [10, 10, 1000, 700], scrollY: 12)
             try store.saveDesktop(SavedDesktop(workspaces: [saved]))
             check("Desktop metadata roundtrip", try store.loadDesktop()?.workspaces[0].files[0].markdownMode == "sideBySide")
+            var hiddenChrome = saved
+            hiddenChrome.tabsVisible = false; hiddenChrome.statusVisible = false; hiddenChrome.lineNumbersVisible = false
+            try store.saveDesktop(SavedDesktop(workspaces: [hiddenChrome]))
+            let restoredChrome = try store.loadDesktop()?.workspaces[0]
+            check("Hidden chrome preferences survive desktop serialization", restoredChrome?.tabsVisible == false && restoredChrome?.statusVisible == false && restoredChrome?.lineNumbersVisible == false)
+            let legacy = try JSONDecoder().decode(SavedWorkspace.self, from: JSONEncoder().encode(saved))
+            check("Legacy workspaces omit new chrome preferences safely", legacy.tabsVisible == nil && legacy.statusVisible == nil && legacy.lineNumbersVisible == nil)
             var invalid = saved; invalid.frame[0] = .infinity
             rejects("Nonfinite geometry rejected") { try store.saveDesktop(.init(workspaces: [invalid])) }
             invalid = saved; invalid.files[0].selections = [[-1, 0]]

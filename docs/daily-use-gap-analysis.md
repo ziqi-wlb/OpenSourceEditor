@@ -1,99 +1,99 @@
-# 日常开发与工作笔记：功能差距和验收计划
+# Daily development and work notes: gaps and acceptance plan
 
-> 本文保留 0.7.0 的分析基线。0.8.0 已着手交付第一阶段：偏好/工作区元数据恢复、快照发现、文件监听、侧栏管理、笔记录入、语言规则统一与后台限量搜索。已交付行为、验收证据和仍缺少的功能见 [日常使用实施报告](daily-use-implementation.md)。下方“缺失”描述对应原始基线，不能用于判断 0.8.0 的现状。
+[中文](daily-use-gap-analysis.zh-CN.md)
 
-本报告基于 macOS 0.7.0、提交 `9c719a9` 的生产源码、菜单入口及已有验证记录，分析日期为 2026-10-24。Windows 是独立的实验实现，不能套用 macOS 的功能和验证结论。这里给出完善计划，没有新增运行功能。
+> This retains the 0.7.0 analysis baseline. 0.8.0 delivers stage-one preferences/workspace recovery, snapshot discovery, file monitoring, sidebar operations, note input, unified language rules and bounded background search. See [implementation](daily-use-implementation.md). Missing below describes the old baseline, not current behavior.
 
-当前可以完成基础代码修改、配置文件编辑、Markdown 写作和阅读。作为每天使用的主力工具，应优先补齐状态持久化、文件变化处理、输入可靠性、笔记录入效率和开发辅助。调试器、插件市场、远程开发和小地图可以后置。
+Analysis date: 2026-10-24, macOS 0.7.0 commit `9c719a9`, production entry points and earlier validation. Windows is separate and experimental. This is a plan, with no new runtime implementation in that investigation.
 
-“已实现”表示有生产入口；“已有验证”只覆盖记录中的测试场景；“源码推导”不等于本次已在界面复现。缺失能力通过入口、所属实现及相关源码一起核对，不能仅凭关键词搜索认定。
+Basic code/config editing and Markdown writing/reading work. Daily use prioritizes persistence, external changes, input reliability, note efficiency and developer assistance. Debuggers, marketplaces, remote development and minimaps can follow. Implemented means a production entry; verified means its recorded scenarios. Source reasoning is not a current GUI reproduction, and keyword absence alone does not prove missing behavior.
 
-## 当前可用范围
+## Baseline scope
 
-| 场景 | 当前可用 | 当前限制 |
+| Scenario | Available in 0.7.0 | Limits |
 | --- | --- | --- |
-| 编辑源码、脚本、配置 | 多文件、多选、单文件查找/正则替换、撤销、缩进、注释/行命令、编码/换行切换 | 通用正则高亮；无语义补全、定义跳转、诊断、集成格式化 |
-| 浏览项目 | 懒加载侧栏、快速打开、项目文字搜索、手动刷新、路径复制 | 一个根目录；无侧栏创建/重命名/删除；无自动文件变化监测 |
-| 运行命令 | 显式构建配置、输出日志、取消；一次性 Python 文本扩展 | 无交互终端、错误位置跳转、命名任务列表或调试器 |
-| Markdown 笔记 | 编辑/预览/并排、主题、目录定位、表格/代码块、任务显示、本地图片、HTML 导出 | 无列表续写、图片粘贴管理、预览任务勾选；无公式/Mermaid 专用渲染或 PDF 导出入口 |
-| 工作连续性 | 最近文件、重新打开关闭文件、手动会话保存/恢复、可选崩溃快照 | 配置/工作区没有完整的自动重启恢复；快照需手动发现、选择；无本地版本历史 |
+| Code/scripts/config | Files, multi-selection, literal/regex replacement, undo, indent, comments/line edits, encoding/endings | Basic regex highlighting; no semantic completion/navigation/diagnostics/formatter |
+| Projects | Lazy sidebar, Quick Open, literal project search, explicit refresh, path copy | One root; no create/rename/delete or automatic monitoring |
+| Commands | Explicit builds/output/cancel and one-shot Python | No PTY, error navigation, named task list/debugger |
+| Markdown | Edit/preview/split, themes, headings, tables/code, task display, local images, HTML | No list continuation/image paste/task editing; no math/Mermaid/PDF |
+| Continuity | Recent/reopen files, manual sessions, optional crash snapshots | Incomplete automatic settings/workspace restore, manual snapshot discovery, no version history |
 
-侧栏刷新、会话恢复、多选、自动恢复、查找替换和图片显示已经存在；需要完善的是具体工作流。
+Refresh, sessions, multi-selection, recovery, replacement and images already exist; the gap is their complete workflows.
 
-## 直接确认的实现差距
+## Confirmed producing-boundary gaps
 
-1. **配置重启持久化不完整。** 主题/字体等配置保存在运行期对象里，提供手动导入/导出 JSON。启动创建窗口时没有读取默认配置或上次工作区的流程。最近文件、自动恢复开关分别已有 UserDefaults 持久化，不能推导出全部设置都会恢复。需要区分全局偏好、项目偏好、单文件编码和布局状态。
-2. **恢复已有写入机制，缺少发现体验。** 自动恢复需要启用；启动没有扫描并提示遗留快照，用户要从菜单手动选择。正常关闭会清理所属快照，因此崩溃快照不能充当上次工作区或长期本地历史。需要快照时间、文件摘要、恢复/忽略入口及可见写入状态。
-3. **Python 缩进只是通用规则。** `insertNewline` 复制当前缩进，只对行末 `{`、`[`、`(` 增加一级。`def f():`、`if ready:` 的冒号不会触发一级缩进。没有自有括号/引号配对和跳过闭括号机制。Markdown 列表续写也不能混入代码缩进规则。
-4. **语法菜单与高亮规则有两套支持集合。** `EditorSyntax` 有 SQL，`SyntaxHighlights.supported` 没有 `sql`，SQL 会得到空高亮结果。高亮集合含 `java`、`rb`、`toml`，默认扩展名解析却没有对应语言枚举，不能据此宣称默认有语言支持。共用正则也不能正确表达多行字符串、Markdown 围栏或混合语法。应统一语言识别、注释、缩进和词法规则的所有者。
-5. **文件变化依赖显式操作。** 侧栏已有 `Refresh Folders`；保存有磁盘冲突保护，文件也可手动 Revert。但没有自动处理外部新增、修改、移动和删除的完整流程。应保留展开/选中状态；脏缓冲区必须保留并展示差异，不能自动覆盖。
-6. **项目搜索只看磁盘。** 已有后台取消、容量提示和结果范围复核；未保存缓冲区不进入搜索文本，没有项目正则/替换或 `.gitignore`/可配置排除策略。隐藏文件策略也需要明确，尤其是 `.env`、`.github` 等工作文件。
-7. **单文件查找同步计算。** 查找输入变化重新获取全文匹配；引擎一次收集所有匹配，没有该入口的防抖、取消或结果数量上限。大文件、很多匹配和复杂正则有响应风险，这是源码推导，本次未运行卡顿复现。后台项目搜索不能证明所有搜索都不会阻塞。全文命令仍使用整段文本编辑/撤销事务。
-8. **构建日志不是交互终端。** 当前输出追加文字并显示退出码，没有编译错误文件/行列定位、PTY、输入交互或调试协议。现有构建/插件入口可接外部工具，但不等同于集成格式化、语言服务或 Git 面板。
+1. Preferences are runtime objects with manual JSON import/export; startup does not restore complete default settings/workspaces. Recent files/recovery switches in UserDefaults do not imply all preferences persist. Separate global/project/file encoding/layout ownership.
+2. Recovery writes exist, but startup discovery/visible failure/catalog is missing. Normal close cleans snapshots, so crash recovery is not previous-workspace or durable version history. Add time/digests/restore/ignore/status.
+3. Newline indent copies existing indent and adds after braces, not Python block colons. Bracket/quote pairing is missing. Markdown lists require separate rules.
+4. Syntax menus/highlighting have separate support sets: SQL is declared without matching highlighting; Java/Ruby/TOML have patterns but no default enum recognition. Generic regex does not model multiline/fenced/mixed syntax. Unify recognition/comments/indent/lexical ownership.
+5. Explicit Refresh/Revert/conflict checks exist, but external create/change/move/delete workflows are incomplete. Preserve tree state and dirty content; show diffs rather than overwrite.
+6. Project search is cancellable/bounded/rechecked but disk-only. No dirty-buffer search, project regex/replacement, .gitignore/configurable exclusions; document hidden-file policy for .env/.github.
+7. Single-file search recomputes synchronously, collecting all matches without debounce/cancel/capacity. Large/complex regex responsiveness is a source-derived risk, not a reproduced GUI stall. Project background search does not prove every query is nonblocking; edits/undo still update whole text.
+8. Build logs are not interactive terminals: no compiler location parsing, PTY/input/debug protocols. Builds/plugins can run tools but are not integrated formatting/LSP/Git.
 
-| 证据入口 | 确认内容 |
+| Evidence | Boundary |
 | --- | --- |
-| [启动](../Sources/main.swift)、[应用生命周期](../Sources/EditorApplication.swift) | 新建工作区、运行期配置、无默认配置/会话启动恢复 |
-| [编辑界面](../Sources/EditorUI.swift)：`start`、`makeMenus`、`saveConfiguration`、`updateRecoverySnapshot` | 菜单、手动配置、恢复开关/状态、启动行为 |
-| [文档设置](../Sources/DocumentSettings.swift)：`EditorSyntax`、`insertNewline` | SQL 声明、扩展名解析、通用缩进 |
-| [高亮](../Sources/SyntaxHighlights.swift) | 独立支持集合、全文正则、两百万 UTF-16 单位阈值 |
-| [编辑界面](../Sources/EditorUI.swift)：`sidebarContextMenu`、`setProject`、`revertCurrentDocument` | 手动刷新、索引、显式磁盘重读 |
-| [项目搜索](../Sources/ProjectSearch.swift)、[搜索界面](../Sources/ProjectSearchPanel.swift) | 磁盘搜索、扫描边界、结果与取消 |
-| [文本引擎](../Sources/EditorCore.swift)：`SearchEngine`、[编辑界面](../Sources/EditorUI.swift)：`controlTextDidChange`、`searchMatches` | 单文件全文搜索的同步调用链 |
-| [命令服务](../Sources/EditorServices.swift)、[扩展合同](../plugins.md) | 显式进程/快照边界，不是常驻语言服务或交互终端 |
-| [Markdown 行为](document-workspace.md) | 只读任务、本地图片、导出及兼容范围 |
+| [Startup](../Sources/main.swift), [application](../Sources/EditorApplication.swift) | Runtime workspaces/preferences and missing default startup state in the baseline |
+| [Editor UI](../Sources/EditorUI.swift): start/makeMenus/saveConfiguration/updateRecoverySnapshot | Menus, manual settings, recovery switches and startup |
+| [Settings](../Sources/DocumentSettings.swift): EditorSyntax/insertNewline | SQL, extension detection and generic indent |
+| [Highlights](../Sources/SyntaxHighlights.swift) | Separate support, regex and 2 million UTF-16 threshold |
+| [Editor UI](../Sources/EditorUI.swift): sidebarContextMenu/setProject/revertCurrentDocument | Explicit refresh/index/disk reload |
+| [Project search](../Sources/ProjectSearch.swift), [panel](../Sources/ProjectSearchPanel.swift) | Disk scanning, limits and cancellation |
+| [Core](../Sources/EditorCore.swift), [UI](../Sources/EditorUI.swift): SearchEngine/controlTextDidChange/searchMatches | Baseline synchronous file-search chain |
+| [Services](../Sources/EditorServices.swift), [extensions](../plugins.md) | Explicit processes/snapshots, not resident LSP/terminal |
+| [Markdown](document-workspace.md) | Read-only tasks, local images, export and limits |
 
-## 优先完善清单
+## Priorities
 
-P0 是主力使用前的可靠性与连续性要求；P1 是日常工作闭环；P2 是进阶效率和发行。已有原生能力的项目可能主要需要验证，不代表必须重写。
+P0 is reliability/continuity before primary-tool use; P1 closes daily workflows; P2 adds efficiency/distribution. Existing native capabilities may need acceptance rather than rewriting.
 
-| 优先级 | 需要完善 | 最小交付和验收 |
+| Priority | Work | Minimum acceptance |
 | --- | --- | --- |
-| P0 | 配置/工作区自动恢复 | 改字体/主题/默认缩进、打开项目和多个文件后正常退出，再启动恢复；保留文件顺序、选中页、选区和布局；损坏配置回退并保留原文件 |
-| P0 | 崩溃快照发现 | 重启列出遗留快照，显示时间/文件数/限制，在新窗口恢复；活动快照不能被误恢复/清理；写入失败有可见入口 |
-| P0 | 外部文件变化 | 外部写入、Git 切换、移动/删除后正确提示；脏缓冲区不丢失；干净文件重载选区合法；刷新保持目录树状态 |
-| P0 | 输入与撤销验收 | 中文/日文组合态、emoji/组合字符、多选输入/粘贴、跨视图、候选窗口及撤销重做实机验证；原生 TextKit 不能代替验证 |
-| P0 | 搜索/大文件响应 | 单文件查询防抖、修订号隔离、结果/内存边界和不完整覆盖；复杂正则有可行的退出策略，后台执行不等于能中断；大文本编辑/撤销实测 |
-| P1，共用 | 侧栏文件管理 | 创建文件/文件夹、重命名、移动、移到废纸篓；检查脏缓冲区、目标冲突和权限；同步文档路径/项目索引 |
-| P1，笔记 | Markdown 录入 | 继续/结束无序、有序和任务列表，引用续写、列表缩进；标题/链接/代码块快捷插入；单次撤销，不干扰输入法/围栏 |
-| P1，笔记 | 图片与附件 | 粘贴/拖入图片，写入项目附件目录并插入相对路径；命名去重，失败不留错误链接；保留当前路径/容量约束 |
-| P1，笔记 | 任务与模板 | 源码快捷切换任务；预览勾选必须映射源码并复核修订；日期/时间、会议纪要/日报/待办模板 |
-| P1，笔记 | 分享与阅读 | 打印/PDF 入口及打印样式，跨页代码/表格验证；源位置同步定位；保留现有 HTML 导出 |
-| P1，开发 | 统一语言规则 | 修正 SQL 等支持名单；优先 Python、Swift、JS/TS、JSON/YAML、Shell、Markdown；按语言验证注释/字符串/缩进/括号/基础片段 |
-| P1，开发 | 格式化与配置 | 显式外部格式化工具，文件/选区、单次撤销、拒绝过期结果；全局/项目配置和 `.editorconfig`；不默认捆绑工具链 |
-| P1，开发 | 语言服务/导航 | 常用语言可选 LSP：补全、悬浮、定义/引用、诊断、符号、前进/后退；超时/退出/取消不阻塞编辑或污染其他项目 |
-| P1，共用 | 搜索工作流 | 文件/选区范围；项目包括/排除、忽略规则、磁盘/未保存选项；项目替换先预览，再逐文件复核版本、报告失败/跳过，不能承诺跨文件磁盘写入原子撤销 |
-| P1，开发 | 构建/终端衔接 | 命名任务、错误位置跳转，明确构建使用磁盘文本；先提供项目目录外部终端入口，内置交互终端后置 |
-| P1，开发 | Git 基础视图 | 状态、工作区差异、行变更、冲突标记；外部 Git 操作后刷新；提交/推送保持显式，可先不在编辑器内实现 |
-| P1，共用 | 本地历史 | 有限保存版本、差异、恢复到新缓冲区、容量/保留天数；与崩溃快照分别管理，目录是否纳入由用户选择 |
-| P2 | 进阶界面/笔记 | 标签固定/排序、面包屑、矩形选择、折叠、专注阅读；公式/Mermaid、双向链接、标签/任务汇总按真实需求添加 |
-| P2 | 发行/跨平台 | macOS 签名/公证、更新策略、Intel 实机；Windows 按文件保留撤销及 Markdown/搜索/会话等功能与原生验收 |
+| P0 | Preferences/workspace restart | Restore fonts/theme/default indent/project/files/order/tab/ranges/layout; corrupt files retained with fallback |
+| P0 | Recovery discovery | List time/count/limits on restart; restore separately; protect live snapshots; visible failures |
+| P0 | External changes | Write/Git switch/move/delete notices; retain dirty text; valid clean reload ranges/tree state |
+| P0 | Input/undo | Real Chinese/Japanese marked input, emoji/combining text, multi-input/paste, split and undo/redo |
+| P0 | Search/large files | Debounce, revisions, result/memory bounds, incomplete coverage, workable regex interruption; measure edits/undo |
+| P1 shared | Sidebar management | Create/rename/move/trash; dirty content, conflicts, permissions; update document/index identities |
+| P1 notes | Markdown entry | Continue/end unordered/ordered/tasks/quotes, indent lists, insert headings/links/fences, single undo/IME correctness |
+| P1 notes | Images/attachments | Paste/drop, scoped assets/relative links, unique names, no dangling failed links, capacity checks |
+| P1 notes | Tasks/templates | Source task commands, revision-mapped preview tasks, timestamp/meeting/daily/to-do templates |
+| P1 notes | Reading/sharing | Print/PDF/styles, paged code/tables and source-location sync; retain HTML |
+| P1 development | Unified languages | Python/Swift/JS/TS/JSON/YAML/Shell/Markdown, actual comments/strings/indent/brackets/basic snippets |
+| P1 development | Formatting/config | Explicit external formatter, file/range, one undo, stale-result rejection, global/project/.editorconfig; no bundled toolchain |
+| P1 development | LSP/navigation | Optional real completion/hover/definitions/references/diagnostics/symbols/history; service timeout/cancel/isolation |
+| P1 shared | Search workflow | File/range scopes, includes/excludes/dirty buffers, preview/recheck project replacement, explicit failures; no cross-file atomic undo claim |
+| P1 development | Builds/terminal | Named tasks, error navigation, explicit disk-text builds; external project terminal before embedded PTY |
+| P1 development | Git basics | Status/diff/line changes/conflicts, refresh after external Git; commits/push explicit, optional external client |
+| P1 shared | Local history | Bounded versions/diffs/restore-to-new-buffer/capacity/days; independent crash snapshots and user-selected scope |
+| P2 | UI/advanced notes | Pin/order tabs, breadcrumbs, rectangular selection, folding, focus reading; math/Mermaid/links/tags/tasks by real demand |
+| P2 | Distribution/platforms | Signing/notarization/update policy/Intel; Windows per-file undo, Markdown/search/session parity and native validation |
 
-## 建议顺序与场景验收
+## Order and scenarios
 
-1. **可靠性与连续性：** P0，加侧栏基本文件管理。重启能回到工作现场；外部更新和输入法不破坏内容。
-2. **工作笔记：** 列表/任务、图片、模板、PDF、跨笔记搜索。会议记录到归档分享能完整完成，无需先建立知识库数据库。
-3. **日常开发：** 语言规则、格式化、LSP/导航、任务定位、Git 差异。可配合现有终端和 Git 客户端，不必等待完整调试器/插件市场。
-4. **持续可靠性与发行：** 长时间运行、多项目切换、无障碍/多屏、Intel/Windows 原生验收，再完善签名和更新。
+1. Reliability/continuity plus sidebar basics: restart the work scene and protect text from external changes/IME.
+2. Notes: lists/tasks/images/templates/PDF/search, from meeting to shareable archive without requiring a knowledge-base database.
+3. Development: language rules/format/LSP/navigation/tasks/Git, alongside external terminals/clients before full debugger/marketplace.
+4. Prolonged work/projects/accessibility/screens and Intel/Windows acceptance, then signing/updates.
 
-以下为待执行方案，不是本次已通过的测试。
+The following are planned checks, not recorded passes.
 
-**笔记流程：** 建文件夹 → 模板新建 Markdown → 中文输入 → 连续添加任务/列表 → 粘贴截图 → 并排预览 → 改任务状态 → 跨笔记搜索 → 保存/PDF → 退出重启恢复。还要覆盖未命名笔记、外部修改、写入失败、图片重名/超限、取消保存和突然退出。文件/附件应能由其他 Markdown 编辑器直接读取。
+Notes: folder→Markdown template→Chinese input→lists/tasks→screenshot paste→split preview→task toggle→cross-note search→save/PDF→quit/restart. Include untitled/external changes/write failures/image conflicts/limits/cancel/crash; ordinary Markdown tools must read files/assets.
 
-**开发流程：** 打开真实项目 → 搜索包含未保存文件的符号 → 快速打开 → 定义跳转并返回 → 修改源码 → 缩进/格式化 → 查看诊断 → 构建/测试 → 点击错误 → Git 差异 → 外部切分支 → 保留脏缓冲区并处理冲突。上述初期语言是基于当前项目和常见工作流的建议，最终按实际语言/仓库/工具链验收；模拟 LSP 不证明真实语言支持。
+Development: real project→search including dirty files→Quick Open→definition/back→edit/indent/format→diagnostics→build/test→error click→Git diff→external branch switch→retain dirty text/resolve conflict. Languages are recommendations, accepted against actual repositories/toolchains; simulated LSP is insufficient.
 
-**可靠性与性能：**
+Reliability/performance:
 
-- 连续工作八小时，包括多窗口、保存/恢复、预览、项目切换、任务取消；检验退出选择与恢复内容。
-- 固定机器/窗口/数据集，测真实输入到显示、查询到结果、打开、滚轮；区分冷/暖、主/辅助进程、CPU/内存。普通输入 p95 < 50 ms、1 MiB 文本打开 < 500 ms 可作为初始目标，尚未验证。
-- 大文件、超长行、大量匹配、无匹配、复杂正则、超容量输入分别检验取消/降级，不能用小文件平均值覆盖。
-- 至少 100 个文档重复打开/编辑/关闭，核对跟踪对象释放、任务结束及稳定后的内存趋势；结合堆分析区分泄露与缓存，不要求 RSS 每次回到冷启动值。
-- 中文/日文输入法、键盘操作、VoiceOver、放大字体、浅/暗主题、多屏/全屏、睡眠唤醒实机验收。
+- Eight-hour sessions with windows, save/recovery/preview/project switches/cancel and quit/restart choices.
+- Fixed machine/window/data, real input-to-display/query/open/wheel, cold/warm, main/helpers, CPU/memory. Initial goals p95 input <50 ms and 1 MiB open <500 ms remain unverified.
+- Large/long-line/many/no-match/pathological/capacity inputs, cancellation/degradation rather than small-file averages.
+- At least 100 repeated document lifetimes; tracked release, task completion and settled memory trends plus heap diagnosis. RSS need not return to cold baseline each time.
+- Real Chinese/Japanese IME, keyboard, VoiceOver, large fonts, themes, multiscreen/fullscreen/sleep.
 
-## 已有证据与本次范围
+## Evidence and scope
 
-已有回归 `product-070-final-v4` 是 450 项通过、13 项单独跳过，生产源码摘要仍匹配。其中有 34 项 Markdown 工作区 UI 检查、六项突然退出/重新读取恢复检查；原生文件选择器手动验收明确未验证。这不能证明上述新能力存在，也不覆盖八小时使用。
+Historical `product-070-final-v4`: 450 passed/13 skipped, matching source digests, 34 Markdown UI and six abrupt recovery checks. Successful chooser selection and eight-hour use remain unverified. This does not establish the planned features.
 
-Markdown 六次打开/预览/关闭及先前 96 文档生命周期测量见 [当前性能报告](document-workspace-performance.md) 与 [文本引擎报告](performance-optimization.md)。跟踪对象释放并非所有路径均无泄露的证明；首次 WebKit 启动及真实输入/滚轮性能仍有未验证部分。
+Six-cycle preview and earlier 96-document lifetime results are in [workspace performance](document-workspace-performance.md) and [text performance](performance-optimization.md). Tracked release is not all-path leak freedom; WebKit startup/real input/wheel have remaining scope.
 
-本次核对源码和已有测试摘要，没有执行新 GUI/性能复现，没有修改应用代码或编译安装，也没有操作正在使用的窗口。完整发行验收继续参见 [产品就绪清单](product-readiness.md)。
+The investigation reviewed source/retained summaries only, with no new GUI/performance reproduction, build/install or user-window operation. See [readiness](product-readiness.md) for later release acceptance.

@@ -47,6 +47,98 @@ enum ProductUITests {
         }
         do {
             try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
+            let presentationWorkspace = app.newWindow(tabbed: false)
+            await pump()
+            let appMenu = NSApp.mainMenu?.items.first { $0.title == "Source Editor" }?.submenu
+            func invokeInformation(_ title: String) -> Bool {
+                guard let item = appMenu?.items.first(where: { $0.title == title }), let action = item.action else { return false }
+                return NSApp.sendAction(action, to: item.target, from: item)
+            }
+            let workspaceCount = app.workspaces.count
+            check("Application menu opens project introduction", invokeInformation("About Source Editor"))
+            if let controller = app.projectInformationWindow, let window = controller.window {
+                func descendants(_ view: NSView) -> [NSView] { view.subviews.flatMap { [$0] + descendants($0) } }
+                let views = window.contentView.map(descendants) ?? []
+                let text = views.compactMap { $0 as? NSTextView }.first
+                let language = views.compactMap { $0 as? NSSegmentedControl }.first { $0.label(forSegment: 0) == "English" }
+                check("Project introduction is a separate visible window", window.isVisible && window.tabbingMode == .disallowed && app.workspaces.count == workspaceCount)
+                check("Introduction displays author and email", views.compactMap { $0 as? NSTextField }.contains { $0.stringValue.contains("ziqi-wlb") && $0.stringValue.contains("550461053@qq.com") })
+                language?.selectedSegment = 0
+                if let language, let action = language.action { _ = NSApp.sendAction(action, to: language.target, from: language) }
+                check("Introduction supports English", text?.string.contains("independently implemented native editor") == true)
+                language?.selectedSegment = 1
+                if let language, let action = language.action { _ = NSApp.sendAction(action, to: language.target, from: language) }
+                check("Introduction supports Chinese", text?.string.contains("独立实现的原生编辑器") == true)
+                check("Release menu reuses the information window", invokeInformation("Release Notes…") && app.projectInformationWindow === controller && controller.section == .releases)
+                let version = Bundle.main.object(forInfoDictionaryKey: "CFBundleShortVersionString") as? String ?? "missing"
+                check("Offline release notes include installed and historical versions", text?.string.contains("Source Editor " + version) == true && text?.string.contains("Source Editor 0.9.2") == true)
+                let contact = controller.information.contactURL.flatMap { URLComponents(url: $0, resolvingAgainstBaseURL: false) }
+                check("Contact menu prepares mail without sending", appMenu?.items.contains { $0.title == "Contact Author…" } == true && contact?.scheme == "mailto" && contact?.path == "550461053@qq.com")
+                await pump()
+                func informationFitsViewport() -> Bool {
+                    guard let text, let clip = text.enclosingScrollView?.contentView else { return false }
+                    return clip.bounds.origin.x == 0 && text.frame.width <= clip.bounds.width + 1
+                }
+                check("Information body wraps within an unclipped viewport", informationFitsViewport())
+                try capture(window, "release-notes-chinese.png")
+                language?.selectedSegment = 0
+                if let language, let action = language.action { _ = NSApp.sendAction(action, to: language.target, from: language) }
+                await pump()
+                try capture(window, "release-notes-english.png")
+                window.setContentSize(NSSize(width: 540, height: 420))
+                await pump()
+                check("Long English release notes reflow in a narrower window", informationFitsViewport())
+                window.setContentSize(NSSize(width: 700, height: 550))
+                window.performClose(nil)
+                check("Closing and reopening notes retains the same window", invokeInformation("Release Notes…") && app.projectInformationWindow === controller && window.isVisible)
+                window.performClose(nil)
+                app.activeWorkspace?.window.makeKeyAndOrderFront(nil)
+            } else { check("Project information window available", false) }
+            if let workspace = app.activeWorkspace {
+                let previous = workspace.currentDocument
+                let focusFile = directory.appendingPathComponent("focus.swift")
+                try Data(("// Source Editor — Focus Mode\n// Hide chrome, keep editing, restore your layout.\n\n" + String(repeating: "let message = \"Native editing · 中文 · 😀\"\n", count: 24)).utf8).write(to: focusFile)
+                workspace.openDocument(focusFile)
+                let source = workspace.currentDocument?.storage.string
+                let viewMenu = NSApp.mainMenu?.items.first { $0.title == "View" }?.submenu
+                func invokeView(_ title: String) -> Bool {
+                    guard let item = viewMenu?.items.first(where: { $0.title == title }), let action = item.action else { return false }
+                    return NSApp.sendAction(action, to: item.target, from: item)
+                }
+                check("Tab bar can be hidden independently", invokeView("Toggle Tab Bar") && workspace.snapshot["tabsVisible"] as? Bool == false)
+                check("Status bar can be hidden independently", invokeView("Toggle Status Bar") && workspace.snapshot["statusVisible"] as? Bool == false)
+                check("Line numbers can be hidden independently", invokeView("Toggle Line Numbers") && workspace.snapshot["lineNumbersVisible"] as? Bool == false)
+                let originalSidebar = workspace.snapshot["sidebarVisible"] as? Bool
+                check("Focus mode starts through View menu", invokeView("Toggle Focus Mode"))
+                check("Focus mode enters native full screen", await wait { workspace.window.styleMask.contains(.fullScreen) && workspace.snapshot["fullScreenTransition"] as? Bool == false })
+                check("Focus mode hides sidebar and editor chrome", workspace.snapshot["focusMode"] as? Bool == true && workspace.snapshot["sidebarVisible"] as? Bool == false && workspace.snapshot["tabsVisible"] as? Bool == false && workspace.snapshot["statusVisible"] as? Bool == false)
+                check("Full screen automatically hides menu and Dock", NSApp.presentationOptions.contains(.autoHideMenuBar) && NSApp.presentationOptions.contains(.autoHideDock))
+                workspace.window.contentView?.layoutSubtreeIfNeeded()
+                let viewport = workspace.snapshot["editorViewportHeight"] as? CGFloat ?? 0
+                let area = workspace.snapshot["editorAreaHeight"] as? CGFloat ?? 0
+                check("Hidden chrome leaves no empty header or footer", viewport > 0 && abs(viewport - area) < 2)
+                let saved = workspace.desktopSnapshot
+                check("Focus mode persists original layout instead of transient hiding", saved.sidebarVisible == originalSidebar && saved.tabsVisible == false && saved.statusVisible == false)
+                workspace.selectDocument(workspace.selectedIndex)
+                check("Reselecting a file retains focus mode and text", workspace.snapshot["focusMode"] as? Bool == true && workspace.snapshot["tabsVisible"] as? Bool == false && workspace.currentDocument?.storage.string == source)
+                try capture(workspace.window, "focus-mode.png")
+                if let event = NSEvent.keyEvent(with: .keyDown, location: .zero, modifierFlags: [], timestamp: ProcessInfo.processInfo.systemUptime,
+                    windowNumber: workspace.window.windowNumber, context: nil, characters: "\u{1b}", charactersIgnoringModifiers: "\u{1b}", isARepeat: false, keyCode: 53) { workspace.window.sendEvent(event) }
+                check("Escape exits focus and its full screen", await wait { workspace.snapshot["focusMode"] as? Bool == false && !workspace.window.styleMask.contains(.fullScreen) && workspace.snapshot["fullScreenTransition"] as? Bool == false })
+                check("Exiting focus restores customized layout and editor focus", workspace.snapshot["sidebarVisible"] as? Bool == originalSidebar && workspace.snapshot["tabsVisible"] as? Bool == false && workspace.snapshot["statusVisible"] as? Bool == false && workspace.window.firstResponder === workspace.currentTextView)
+                _ = invokeView("Toggle Tab Bar"); _ = invokeView("Toggle Status Bar"); _ = invokeView("Toggle Line Numbers")
+                check("Restoring chrome leaves text unchanged", workspace.snapshot["tabsVisible"] as? Bool == true && workspace.snapshot["statusVisible"] as? Bool == true && workspace.currentDocument?.storage.string == source)
+                _ = invokeView("Toggle Full Screen")
+                let entered = await wait { workspace.window.styleMask.contains(.fullScreen) && workspace.snapshot["fullScreenTransition"] as? Bool == false }
+                _ = invokeView("Toggle Focus Mode"); _ = invokeView("Toggle Focus Mode")
+                check("Focus exit preserves previously entered full screen", entered && workspace.window.styleMask.contains(.fullScreen) && workspace.snapshot["focusMode"] as? Bool == false)
+                _ = invokeView("Toggle Full Screen")
+                check("Full screen can exit through View menu", await wait { !workspace.window.styleMask.contains(.fullScreen) && workspace.snapshot["fullScreenTransition"] as? Bool == false })
+                _ = workspace.executeCommand("close_tab")
+                if let previous, let index = workspace.documents.firstIndex(where: { $0 === previous }) { workspace.selectDocument(index) }
+            } else { check("Focus mode workspace available", false) }
+            presentationWorkspace.window.performClose(nil)
+            await pump()
             let md = directory.appendingPathComponent("preview.md")
             let plain = directory.appendingPathComponent("notes.txt")
             let source = """

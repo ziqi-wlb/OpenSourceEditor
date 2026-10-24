@@ -57,6 +57,7 @@ private final class ProjectItem: NSObject {
 
 private final class EditorTextView: NSTextView {
     var onFocus: (() -> Void)?
+    var onExitFocus: (() -> Bool)?
     var makeContextMenu: (() -> NSMenu?)?
     var onPasteImage: ((Data) -> Void)?
     weak var document: EditorDocument?
@@ -101,6 +102,9 @@ private final class EditorTextView: NSTextView {
     }
 
     override func keyDown(with event: NSEvent) {
+        if event.keyCode == 53, !hasMarkedText(),
+           event.modifierFlags.intersection([.command, .control, .option, .shift]).isEmpty,
+           onExitFocus?() == true { return }
         if event.keyCode == 48, event.modifierFlags.contains(.shift),
            event.modifierFlags.intersection([.command, .control, .option]).isEmpty {
             insertBacktab(self)
@@ -827,6 +831,21 @@ final class EditorWorkspace: NSObject, NSWindowDelegate,
     private var recoveryMessage = "Auto recovery is off"
     private var markdownModeCache: [ObjectIdentifier: MarkdownViewMode] = [:]
     private let tabs = NSStackView()
+    private let tabScroll = NSScrollView()
+    private var lineNumbersVisible = true
+    private struct FocusLayout {
+        let sidebarVisible: Bool
+        let tabsVisible: Bool
+        let statusVisible: Bool
+        let lineNumbersVisible: Bool
+        let findVisible: Bool
+        let outputVisible: Bool
+        let windowTabBarVisible: Bool
+        let frame: NSRect
+    }
+    private var focusLayout: FocusLayout?
+    private var focusEnteredFullScreen = false
+    private var fullScreenTransition = false
     private let outline = ContextOutlineView()
     private let projectLabel = NSTextField(labelWithString: "OPEN FILES")
     private let status = EditorStatusBar()
@@ -974,12 +993,18 @@ final class EditorWorkspace: NSObject, NSWindowDelegate,
                 selections: Array((selectionCache[ObjectIdentifier(document)]?.map { [$0.rangeValue.location, $0.rangeValue.length] } ?? [[0, 0]]).prefix(4096)),
                 markdownMode: String(describing: markdownModeCache[ObjectIdentifier(document)] ?? .edit))
         }
-        let rect = window.frame
-        return .init(files: files, selectedPath: currentDocument?.fileURL?.path, projectPath: projectRoot?.url.path,
-            split: splitEnabled, sidebarVisible: projectSplit.arrangedSubviews.first?.isHidden == false,
+        let rect = focusLayout?.frame ?? window.frame
+        let savedSidebar = focusLayout?.sidebarVisible ?? (projectSplit.arrangedSubviews.first?.isHidden == false)
+        let savedTabs = focusLayout?.tabsVisible ?? !tabScroll.isHidden
+        let savedStatus = focusLayout?.statusVisible ?? !status.isHidden
+        let savedLineNumbers = focusLayout?.lineNumbersVisible ?? lineNumbersVisible
+        let recoveryName = discardDraftsOnClose ? nil : recovery?.url.lastPathComponent
+        return SavedWorkspace(files: files, selectedPath: currentDocument?.fileURL?.path, projectPath: projectRoot?.url.path,
+            split: splitEnabled, sidebarVisible: savedSidebar,
             frame: [Double(rect.origin.x), Double(rect.origin.y), Double(rect.width), Double(rect.height)],
             scrollY: Double(currentTextView?.enclosingScrollView?.contentView.bounds.origin.y ?? 0),
-            recoveryFileName: discardDraftsOnClose ? nil : recovery?.url.lastPathComponent)
+            recoveryFileName: recoveryName, tabsVisible: savedTabs, statusVisible: savedStatus,
+            lineNumbersVisible: savedLineNumbers)
     }
 
     func restoreDesktop(_ saved: SavedWorkspace) {
@@ -1011,6 +1036,11 @@ final class EditorWorkspace: NSObject, NSWindowDelegate,
         }
         if let path = saved.projectPath, FileManager.default.fileExists(atPath: path) { setProject(URL(fileURLWithPath: path, isDirectory: true)) }
         projectSplit.arrangedSubviews.first?.isHidden = !saved.sidebarVisible
+        tabScroll.isHidden = !(saved.tabsVisible ?? true)
+        status.isHidden = !(saved.statusVisible ?? true)
+        lineNumbersVisible = saved.lineNumbersVisible ?? true
+        for pane in panes { pane.scroll.rulersVisible = lineNumbersVisible }
+        editorArea.needsLayout = true
         if saved.frame.count == 4 {
             let rect = NSRect(x: saved.frame[0], y: saved.frame[1], width: max(760, min(10000, saved.frame[2])), height: max(420, min(10000, saved.frame[3])))
             if NSScreen.screens.contains(where: { $0.visibleFrame.intersects(rect) }) { window.setFrame(rect, display: true) }
@@ -1245,6 +1275,22 @@ final class EditorWorkspace: NSObject, NSWindowDelegate,
 
     func windowDidBecomeKey(_ notification: Notification) { activateMenus() }
 
+    func window(_ window: NSWindow, willUseFullScreenPresentationOptions proposedOptions: NSApplication.PresentationOptions) -> NSApplication.PresentationOptions {
+        proposedOptions.union([.autoHideMenuBar, .autoHideDock])
+    }
+    func windowWillEnterFullScreen(_ notification: Notification) { fullScreenTransition = true }
+    func windowDidEnterFullScreen(_ notification: Notification) { fullScreenTransition = false }
+    func windowWillExitFullScreen(_ notification: Notification) { fullScreenTransition = true }
+    func windowDidExitFullScreen(_ notification: Notification) {
+        fullScreenTransition = false
+        if focusLayout != nil { restoreFocusLayout() }
+    }
+    func windowDidFailToEnterFullScreen(_ window: NSWindow) {
+        fullScreenTransition = false
+        restoreFocusLayout()
+    }
+    func windowDidFailToExitFullScreen(_ window: NSWindow) { fullScreenTransition = false }
+
     func activateMenus() {
         if let mainMenu { NSApp.mainMenu = mainMenu; NSApp.windowsMenu = windowMenu }
         refreshRecentFilesMenu()
@@ -1290,7 +1336,7 @@ final class EditorWorkspace: NSObject, NSWindowDelegate,
             menu.addItem(value)
         }
         let app = menu("Source Editor")
-        item(app, "About Source Editor", #selector(showAbout))
+        applicationOwner?.addProjectInformationMenuItems(to: app)
         item(app, "Load Configuration…", #selector(loadConfiguration))
         item(app, "Save Configuration…", #selector(saveConfiguration))
         item(app, "Reset Configuration", #selector(resetConfiguration))
@@ -1405,6 +1451,11 @@ final class EditorWorkspace: NSObject, NSWindowDelegate,
         item(view, "Export Markdown as HTML…", #selector(exportMarkdown))
         view.addItem(.separator())
         item(view, "Toggle Sidebar", #selector(toggleSidebar), "b", [.command, .control])
+        item(view, "Toggle Tab Bar", #selector(toggleTabBar))
+        item(view, "Toggle Status Bar", #selector(toggleStatusBar))
+        item(view, "Toggle Line Numbers", #selector(toggleLineNumbers))
+        item(view, "Toggle Full Screen", #selector(toggleFullScreen), "f", [.command, .control])
+        item(view, "Toggle Focus Mode", #selector(toggleFocusMode), "z", [.command, .option])
         item(view, "Toggle Output", #selector(toggleOutput))
         item(view, "Next Tab", #selector(nextTab), "]", [.command, .shift])
         item(view, "Previous Tab", #selector(previousTab), "[", [.command, .shift])
@@ -1531,7 +1582,6 @@ final class EditorWorkspace: NSObject, NSWindowDelegate,
         }
         editorArea = FrameLayoutView()
         editorArea.clipsToBounds = true
-        let tabScroll = NSScrollView()
         tabScroll.hasHorizontalScroller = true
         tabScroll.autohidesScrollers = true
         tabScroll.drawsBackground = false
@@ -1574,15 +1624,17 @@ final class EditorWorkspace: NSObject, NSWindowDelegate,
         }
         editorArea.arrange = { [weak self, weak tabScroll] size in
             guard let self, let tabScroll else { return }
-            tabScroll.frame = NSRect(x: 0, y: 0, width: size.width, height: 40)
+            let tabHeight: CGFloat = tabScroll.isHidden ? 0 : 40
+            tabScroll.frame = NSRect(x: 0, y: 0, width: size.width, height: tabHeight)
             let noticeHeight: CGFloat = self.noticeBar.isHidden ? 0 : 28
-            self.noticeBar.frame = NSRect(x: 10, y: 40, width: max(1, size.width - 20), height: noticeHeight)
+            self.noticeBar.frame = NSRect(x: 10, y: tabHeight, width: max(1, size.width - 20), height: noticeHeight)
             let markdownHeight: CGFloat = self.markdownBar.isHidden ? 0 : 34
-            self.markdownBar.frame = NSRect(x: 10, y: 40 + noticeHeight, width: max(1, size.width - 20), height: markdownHeight)
+            self.markdownBar.frame = NSRect(x: 10, y: tabHeight + noticeHeight, width: max(1, size.width - 20), height: markdownHeight)
             let searchHeight: CGFloat = self.findBar.isHidden ? 0 : self.replaceRow.isHidden ? 32 : 66
-            self.findBar.frame = NSRect(x: 10, y: 42 + noticeHeight + markdownHeight, width: max(1, size.width - 20), height: searchHeight)
-            let top = 44 + noticeHeight + markdownHeight + searchHeight
-            let footer: CGFloat = 31
+            self.findBar.frame = NSRect(x: 10, y: tabHeight + 2 + noticeHeight + markdownHeight, width: max(1, size.width - 20), height: searchHeight)
+            let chrome = tabHeight + noticeHeight + markdownHeight + searchHeight
+            let top = chrome > 0 ? chrome + 4 : 0
+            let footer: CGFloat = self.status.isHidden ? 0 : 31
             let workFrame = NSRect(x: 0, y: top, width: size.width, height: max(1, size.height - top - footer))
             if self.workSplit.frame != workFrame { self.workSplit.frame = workFrame; self.workSplit.needsLayout = true }
             self.status.frame = NSRect(x: 0, y: max(0, size.height - 29), width: size.width, height: 29)
@@ -2042,6 +2094,16 @@ final class EditorWorkspace: NSObject, NSWindowDelegate,
     func validateMenuItem(_ menuItem: NSMenuItem) -> Bool {
         if pendingTermination || pendingWindowClose { return menuItem.action == #selector(cancelBuild) }
         switch menuItem.action {
+        case #selector(toggleFocusMode):
+            menuItem.state = focusLayout == nil ? .off : .on
+            return !fullScreenTransition
+        case #selector(toggleFullScreen):
+            menuItem.state = window.styleMask.contains(.fullScreen) ? .on : .off
+            return !fullScreenTransition
+        case #selector(toggleSidebar): menuItem.state = projectSplit.arrangedSubviews.first?.isHidden == false ? .on : .off; return true
+        case #selector(toggleTabBar): menuItem.state = tabScroll.isHidden ? .off : .on; return true
+        case #selector(toggleStatusBar): menuItem.state = status.isHidden ? .off : .on; return true
+        case #selector(toggleLineNumbers): menuItem.state = lineNumbersVisible ? .on : .off; return true
         case #selector(cancelBuild): return isBuildRunning
         case #selector(runBuildAction):
             let markdown = currentDocument?.syntaxIdentifier == "md"
@@ -2135,6 +2197,12 @@ final class EditorWorkspace: NSObject, NSWindowDelegate,
                 return self?.editorContextMenu(text)
             }
             pane.textView.onPasteImage = { [weak self] data in self?.insertNoteImage(data) }
+            pane.textView.onExitFocus = { [weak self] in
+                guard let self, self.focusLayout != nil, !self.fullScreenTransition else { return false }
+                self.toggleFocusMode()
+                return true
+            }
+            pane.scroll.rulersVisible = lineNumbersVisible
             panes.append(pane)
             pane.applyConfiguration(configuration ?? EditorConfiguration())
             editorSplit.addArrangedSubview(pane.scroll)
@@ -3038,13 +3106,6 @@ final class EditorWorkspace: NSObject, NSWindowDelegate,
     @objc private func previousTab() { if !documents.isEmpty { selectDocument((selectedIndex + documents.count - 1) % documents.count) } }
     @objc private func quit() { NSApp.terminate(nil) }
 
-    @objc private func showAbout() {
-        let alert = NSAlert()
-        alert.messageText = "Source Editor"
-        alert.informativeText = "An independently implemented native text editor.\nAppKit · local files · shared text storage\n\nThis reconstruction implements selected observed editor workflows. It does not contain Sublime Text's native engine or provide complete Sublime compatibility."
-        runDialog(alert)
-    }
-
     private func showError(_ error: Error) {
         let alert = NSAlert(error: error)
         runDialog(alert)
@@ -3346,7 +3407,8 @@ final class EditorWorkspace: NSObject, NSWindowDelegate,
     private func refreshMarkdown() {
         guard !pendingTermination, !pendingWindowClose else { releaseMarkdownPreview(); return }
         let supported = currentDocument?.syntaxIdentifier == "md"
-        if markdownBar.isHidden == supported { markdownBar.isHidden = !supported; editorArea.needsLayout = true }
+        let hidden = !supported || focusLayout != nil
+        if markdownBar.isHidden != hidden { markdownBar.isHidden = hidden; editorArea.needsLayout = true }
         let mode = markdownViewMode
         markdownModes.selectedSegment = mode.rawValue
         if editorSplit.isHidden != (mode == .preview) { editorSplit.isHidden = mode == .preview; contentSplit.needsLayout = true }
@@ -3434,6 +3496,54 @@ final class EditorWorkspace: NSObject, NSWindowDelegate,
         }
     }
 
+    @objc private func toggleTabBar() { tabScroll.isHidden.toggle(); editorArea.needsLayout = true }
+    @objc private func toggleStatusBar() { status.isHidden.toggle(); editorArea.needsLayout = true }
+    @objc private func toggleLineNumbers() {
+        lineNumbersVisible.toggle()
+        for pane in panes { pane.scroll.rulersVisible = lineNumbersVisible }
+    }
+    @objc private func toggleFullScreen() {
+        guard !fullScreenTransition else { return }
+        fullScreenTransition = true
+        window.toggleFullScreen(nil)
+    }
+    @objc private func toggleFocusMode() {
+        guard !fullScreenTransition else { return }
+        if focusLayout != nil {
+            let exitFullScreen = focusEnteredFullScreen && window.styleMask.contains(.fullScreen)
+            restoreFocusLayout()
+            if exitFullScreen { toggleFullScreen() }
+            return
+        }
+        focusLayout = FocusLayout(sidebarVisible: projectSplit.arrangedSubviews.first?.isHidden == false,
+            tabsVisible: !tabScroll.isHidden, statusVisible: !status.isHidden, lineNumbersVisible: lineNumbersVisible,
+            findVisible: !findBar.isHidden, outputVisible: !outputArea.isHidden,
+            windowTabBarVisible: window.tabGroup?.isTabBarVisible == true, frame: window.frame)
+        if window.tabGroup?.isTabBarVisible == true { window.toggleTabBar(nil) }
+        projectSplit.arrangedSubviews.first?.isHidden = true
+        tabScroll.isHidden = true; status.isHidden = true; markdownBar.isHidden = true
+        findBar.isHidden = true; outputArea.isHidden = true
+        lineNumbersVisible = false
+        for pane in panes { pane.scroll.rulersVisible = false }
+        projectSplit.adjustSubviews(); workSplit.adjustSubviews(); editorArea.needsLayout = true
+        window.makeFirstResponder(currentTextView)
+        focusEnteredFullScreen = !window.styleMask.contains(.fullScreen)
+        if focusEnteredFullScreen { toggleFullScreen() }
+    }
+    private func restoreFocusLayout() {
+        guard let saved = focusLayout else { return }
+        focusLayout = nil; focusEnteredFullScreen = false
+        projectSplit.arrangedSubviews.first?.isHidden = !saved.sidebarVisible
+        tabScroll.isHidden = !saved.tabsVisible; status.isHidden = !saved.statusVisible
+        findBar.isHidden = !saved.findVisible; outputArea.isHidden = !saved.outputVisible
+        lineNumbersVisible = saved.lineNumbersVisible
+        if (window.tabGroup?.isTabBarVisible == true) != saved.windowTabBarVisible { window.toggleTabBar(nil) }
+        for pane in panes { pane.scroll.rulersVisible = lineNumbersVisible }
+        projectSplit.adjustSubviews(); workSplit.adjustSubviews(); editorArea.needsLayout = true
+        refreshMarkdown(); followCurrentFileInSidebar()
+        window.makeFirstResponder(currentTextView)
+    }
+
     private func replaceText(_ result: TextEditResult, name: String) {
         if let error = result.error {
             showError(EditorFailure.invalidEdit(error))
@@ -3498,6 +3608,11 @@ final class EditorWorkspace: NSObject, NSWindowDelegate,
             ("Notes: Link", "Wrap current selections", { [weak self] in self?.noteLink() }),
             ("Notes: Date and Time", "Current local time", { [weak self] in self?.insertTimestamp() }),
             ("View: Toggle Sidebar", "⌃⌘B", { [weak self] in self?.toggleSidebar() }),
+            ("View: Toggle Tab Bar", "Show or hide file tabs", { [weak self] in self?.toggleTabBar() }),
+            ("View: Toggle Status Bar", "Show or hide encoding and indentation controls", { [weak self] in self?.toggleStatusBar() }),
+            ("View: Toggle Line Numbers", "Show or hide the gutter", { [weak self] in self?.toggleLineNumbers() }),
+            ("View: Toggle Full Screen", "⌃⌘F", { [weak self] in self?.toggleFullScreen() }),
+            ("View: Toggle Focus Mode", "⌥⌘Z · restore with Escape", { [weak self] in self?.toggleFocusMode() }),
             ("View: Toggle Output", "", { [weak self] in self?.toggleOutput() }),
             ("Build: Run", "⌘B", { [weak self] in self?.runBuildAction() }),
             ("Build: Cancel", "⌃⌘.", { [weak self] in self?.cancelBuild() }),
@@ -3875,6 +3990,11 @@ final class EditorWorkspace: NSObject, NSWindowDelegate,
          "selectionCount": currentTextView?.selectedRanges.count ?? 0,
          "projectFiles": projectFiles.count, "status": status.location.stringValue,
          "projectRoot": projectRoot?.url.path ?? "",
+         "sidebarVisible": projectSplit.arrangedSubviews.first?.isHidden == false,
+         "tabsVisible": !tabScroll.isHidden, "statusVisible": !status.isHidden,
+         "lineNumbersVisible": lineNumbersVisible, "focusMode": focusLayout != nil,
+         "fullScreen": window.styleMask.contains(.fullScreen), "fullScreenTransition": fullScreenTransition,
+         "editorViewportHeight": workSplit.bounds.height, "editorAreaHeight": editorArea.bounds.height,
          "encoding": status.encoding.title, "lineEnding": status.lineEnding.title,
          "indentation": status.indentation.title, "syntax": status.syntax.title,
          "menuActionCount": menuActionCount,

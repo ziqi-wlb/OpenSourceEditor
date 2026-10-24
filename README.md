@@ -1,8 +1,14 @@
 # Source Editor
 
+[中文](README.zh-CN.md)
+
 An independently implemented macOS text editor. Build and run this directory on its own: no Sublime Text installation, REA, npm, network, or investigation files are required. The native Windows implementation is in [windows](windows/README.md).
 
 [Documentation](docs/README.md) · [Architecture and principles](docs/architecture.md) · [Feature matrix](docs/features.md) · [Development and contribution](docs/development.md)
+
+**Source Editor → About Source Editor** shows the installed version, introduction and author contact (`ziqi-wlb`, `550461053@qq.com`) with English/Chinese switching. **Release Notes…** reads the version history offline in a native window, including when all editor windows are closed. **Contact Author…** opens a draft in the system mail application; it does not send automatically. [Release notes](RELEASE_NOTES.md) share the application's authored metadata.
+
+**View → Toggle Focus Mode** (`⌥⌘Z`) hides editor chrome and enters native full screen. Escape in source editing restores the previous layout. Sidebar, file tabs, status and line numbers also have independent View menu switches. In full screen, move to the top edge to access the automatically hidden menu bar. See [layout and persistence](docs/layout.md).
 
 ## Build and install on macOS
 

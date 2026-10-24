@@ -10,7 +10,7 @@ def main():
     parser.add_argument('--with-tests',action='store_true')
     args=parser.parse_args()
     app=Path(__file__).resolve().parents[1]
-    files=[app/p for p in ('README.md','PERFORMANCE.md','plugins.md','Info.plist','build.sh','package.sh','windows/.clang-format')]
+    files=[app/p for p in ('README.md','README.zh-CN.md','PERFORMANCE.md','PERFORMANCE.zh-CN.md','plugins.md','plugins.zh-CN.md','RELEASE_NOTES.md','RELEASE_NOTES.zh-CN.md','Info.plist','build.sh','package.sh','windows/.clang-format')]
     folders=['Sources','Resources','scripts','windows','docs']+(['tests'] if args.with_tests else [])
     extensions={'.swift','.py','.json','.sh','.cpp','.ps1','.md'}
     for folder in folders:
