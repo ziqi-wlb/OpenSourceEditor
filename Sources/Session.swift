@@ -37,6 +37,9 @@ struct EditorSession: Codable {
     var selectedIndex: Int
     var split: Bool
     var documents: [Document]
+    // Optional additions keep existing Save Session and crash snapshots readable.
+    var closedNormally: Bool? = nil
+    var workspace: SavedWorkspace? = nil
     static func load(_ url: URL) throws -> EditorSession {
         let file = try FileHandle(forReadingFrom: url); defer { try? file.close() }
         let data = try file.read(upToCount: 32 * 1024 * 1024 + 1) ?? Data()
@@ -44,6 +47,7 @@ struct EditorSession: Codable {
         let result = try JSONDecoder().decode(Self.self, from: data)
         guard result.version == 1, !result.documents.isEmpty, result.documents.count <= 256,
               result.documents.indices.contains(result.selectedIndex) else { throw EditorFailure.invalidEdit("Invalid or unsupported session.") }
+        if let workspace = result.workspace { try SavedDesktop(workspaces: [workspace]).validate() }
         return result
     }
     func save(_ url: URL) throws {

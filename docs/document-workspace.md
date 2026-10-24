@@ -36,15 +36,11 @@ Quick Open and project search share a cancellable traversal owner. It publishes 
 
 Line operations merge overlapping selected lines, retain Unicode boundaries and handle LF, CRLF, CR and an unterminated final line. Move operations preserve each position's line terminator. Each command is one native undo transaction, including cursor restoration. Comments keep indentation and skip blank lines. JSON/plain text have no comment command; block-comment delimiter conflicts report an error and keep the text intact. These commands are basic syntax operations, not a grammar-aware refactoring engine.
 
-## Optional recovery
+## Draft recovery
 
-Enable **File → Recovery → Enable Auto Recovery** for a workspace. The preference controls future windows after restart. Every five seconds, changed unsaved buffers are captured on the main thread and encoded/written on a serial utility queue. Clean buffers are excluded. At most one snapshot write runs per workspace; edits during a write are picked up at a later timer interval. No file is automatically saved over its source.
+In macOS 0.9.0, automatic draft backup is enabled by default. **Keep Drafts** flushes the final edits on normal close and restores unfinished files and untitled notes next time. **Discard Drafts** and **File → Revert File…** provide explicit ways to return to original disk content. Originals are never overwritten by backup or restore.
 
-Snapshots live in `~/Library/Application Support/Source Editor/Recovery/`. Each workspace owns one random JSON filename, with private file permissions. Automatic capture has a 128 modified-document and 4 million UTF-16 unit source budget. Encoded sessions have the shared 32 MiB session ceiling. Capacity/write errors appear in the location status tooltip and preserve the last successful snapshot; that snapshot may be older. Use Save or Save Session for buffers outside these bounds.
-
-After an unexpected exit, choose **Recover Snapshot in New Window…**. The saved disk digest is checked: unchanged originals retain their path and baseline; changed/missing files recover into modified untitled buffers. Live window snapshots cannot be restored through this command. The original recovered snapshot remains available until manually removed through **Show Recovery Folder**. Corrupt snapshots are retained for inspection.
-
-Saving all modified buffers clears stale snapshot content. Disabling recovery, closing its window or quitting normally queues removal after any pending write, and the application's existing completion path waits for it. A late write cannot recreate a cleaned snapshot. The timer interval and an in-flight write create a recovery gap; atomic file replacement is not a guarantee against hardware/power-loss failure. Recovery does not preserve native undo history.
+See [draft storage, ownership, limits and real quit/restart tests](draft-recovery.md). Abnormal-exit snapshots still appear through the startup notice and Recovery catalog; damaged backups remain available. The 0.8.2 and earlier validation records below describe historical releases.
 
 ## Verification
 

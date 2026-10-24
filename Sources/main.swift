@@ -10,6 +10,9 @@ if arguments.contains("--help") {
     exit(0)
 }
 #if EDITOR_TESTS
+if let flag = arguments.first(where: { $0.hasPrefix("--recovery-measure=") }) {
+    exit(RecoveryPerformanceTests.run(units: Int(flag.dropFirst("--recovery-measure=".count)) ?? 0))
+}
 if let flag = arguments.first(where: { $0.hasPrefix("--recovery-abrupt-write=") }) {
     ProductFeatureTests.writeAbruptRecovery(directory: URL(fileURLWithPath: String(flag.dropFirst("--recovery-abrupt-write=".count)), isDirectory: true))
 }
@@ -31,6 +34,21 @@ if let flag = arguments.firstIndex(of: "--contract-test"), flag + 1 < arguments.
 if arguments.contains("--benchmark") { exit(BenchmarkRunner.run()) }
 let application = NSApplication.shared
 application.setActivationPolicy(.regular)
+if let flag = arguments.first(where: { $0.hasPrefix("--draft-restart-write=") || $0.hasPrefix("--draft-restart-read=") || $0.hasPrefix("--draft-ui-test=") }) {
+    setbuf(stdout, nil)
+    let directory = URL(fileURLWithPath: String(flag.split(separator: "=", maxSplits: 1)[1]), isDirectory: true)
+    Timer.scheduledTimer(withTimeInterval: 0.1, repeats: false) { _ in
+        Task { @MainActor in
+            if flag.hasPrefix("--draft-restart-write=") {
+                do { try DraftRecoveryUITests.prepareNormalQuit(directory: directory) }
+                catch { fputs(error.localizedDescription, stderr); exit(1) }
+            } else if flag.hasPrefix("--draft-restart-read=") { exit(await DraftRecoveryUITests.readNormalRestart(directory: directory)) }
+            else { exit(await DraftRecoveryUITests.run(directory: directory)) }
+        }
+    }
+    application.run()
+    exit(0)
+}
 let delegate = EditorAppDelegate(recentFiles: RecentFiles(defaults: (arguments.contains("--ui-self-test") || arguments.contains("--multi-window-ui-test") || arguments.contains("--performance-test") || arguments.contains("--product-ui-test") || arguments.contains("--daily-ui-test")) ? nil : .standard))
 application.delegate = delegate
 if arguments.contains("--daily-ui-test") {

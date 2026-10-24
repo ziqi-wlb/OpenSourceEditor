@@ -12,7 +12,7 @@ func path(_ points: [(CGFloat, CGFloat)], close: Bool = false) -> NSBezierPath {
     if close { p.close() }; p.lineJoinStyle = .round; p.lineCapStyle = .round
     return p
 }
-func draw() {
+func draw(pixels: Int) {
     let plate = NSBezierPath(roundedRect: NSRect(x: 74, y: 74, width: 876, height: 876), xRadius: 194, yRadius: 194)
     NSGraphicsContext.saveGraphicsState()
     let shadow = NSShadow(); shadow.shadowColor = color(0, 0, 0, 0.28)
@@ -24,9 +24,11 @@ func draw() {
     NSGraphicsContext.saveGraphicsState()
     plate.addClip()
     color(0.20, 0.67, 0.86, 0.08).setStroke()
+    if pixels > 64 {
     for offset in stride(from: 200, through: 850, by: 90) {
         let horizontal = path([(100, CGFloat(offset)), (924, CGFloat(offset))]); horizontal.lineWidth = 1; horizontal.stroke()
         let vertical = path([(CGFloat(offset), 100), (CGFloat(offset), 924)]); vertical.lineWidth = 1; vertical.stroke()
+    }
     }
     NSGraphicsContext.restoreGraphicsState()
 
@@ -34,9 +36,10 @@ func draw() {
     color(0.04, 0.16, 0.25).setFill(); hex.fill()
     NSGraphicsContext.saveGraphicsState()
     let borderGlow = NSShadow(); borderGlow.shadowColor = color(0.10, 0.82, 1, 0.6); borderGlow.shadowBlurRadius = 30; borderGlow.set()
-    color(0.16, 0.84, 1).setStroke(); hex.lineWidth = 8; hex.stroke()
+    color(0.16, 0.84, 1).setStroke(); hex.lineWidth = pixels <= 32 ? 22 : 8; hex.stroke()
     NSGraphicsContext.restoreGraphicsState()
 
+    if pixels > 32 {
     let angle = CGFloat.pi * 32 / 180
     let orbit = path((0...128).map { step in
         let theta = CGFloat(step) * .pi * 2 / 128
@@ -49,6 +52,7 @@ func draw() {
         let glow = NSShadow(); glow.shadowColor = shade; glow.shadowBlurRadius = 22; glow.set()
         shade.setFill(); NSBezierPath(ovalIn: NSRect(x: x - 16, y: y - 16, width: 32, height: 32)).fill()
         NSGraphicsContext.restoreGraphicsState()
+    }
     }
     NSGraphicsContext.saveGraphicsState()
     let promptGlow = NSShadow(); promptGlow.shadowColor = color(0.22, 0.90, 1, 0.6); promptGlow.shadowBlurRadius = 18; promptGlow.set()
@@ -67,7 +71,7 @@ for size in [16, 32, 128, 256, 512] {
         NSGraphicsContext.saveGraphicsState()
         NSGraphicsContext.current = NSGraphicsContext(bitmapImageRep: bitmap)
         NSGraphicsContext.current!.cgContext.scaleBy(x: CGFloat(pixels) / 1024, y: CGFloat(pixels) / 1024)
-        draw()
+        draw(pixels: pixels)
         NSGraphicsContext.restoreGraphicsState()
         let suffix = scale == 2 ? "@2x" : ""
         let url = destination.appendingPathComponent("icon_\(size)x\(size)\(suffix).png")

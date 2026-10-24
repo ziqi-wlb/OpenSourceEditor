@@ -9,6 +9,7 @@ final class EditorAppDelegate: NSObject, NSApplicationDelegate {
     private let desktopStore: EditorDesktopStore?
     private var startupIssue: String?
     private var closingApplication = false
+    var recoveryDirectory: URL { desktopStore?.directory.appendingPathComponent("Recovery") ?? EditorRecovery.defaultDirectory }
 
     init(recentFiles: RecentFiles = RecentFiles(), desktopStore: EditorDesktopStore? = .production) {
         self.recentFiles = recentFiles
@@ -20,17 +21,35 @@ final class EditorAppDelegate: NSObject, NSApplicationDelegate {
     }
 
     func launch(openURLs: [URL], projectURL: URL?) {
+        var restoredRecovery = Set<URL>()
         if openURLs.isEmpty, projectURL == nil {
             do {
                 if let state = try desktopStore?.loadDesktop() {
                     for saved in state.workspaces {
                         let workspace = newWindow()
                         workspace.restoreDesktop(saved)
+                        if let name = saved.recoveryFileName {
+                            let url = recoveryDirectory.appendingPathComponent(name).standardizedFileURL
+                            if FileManager.default.fileExists(atPath: url.path),
+                               (try? EditorSession.load(url))?.closedNormally == true {
+                                _ = try workspace.restoreRecoverySnapshot(url, into: workspace)
+                                restoredRecovery.insert(url)
+                            }
+                        }
                     }
                 }
             } catch { startupIssue = "Could not restore workspace. The original file is preserved: " + error.localizedDescription }
         }
         if workspaces.isEmpty { newWindow(openURLs: openURLs, projectURL: projectURL) }
+        // Closing a window removes it from the normal desktop list, but its
+        // explicitly retained drafts must still return on the next launch.
+        for candidate in RecoveryCandidate.discover(in: recoveryDirectory) where !restoredRecovery.contains(candidate.url.standardizedFileURL) {
+            do {
+                if try EditorSession.load(candidate.url).closedNormally == true {
+                    _ = try activeWorkspace?.restoreRecoverySnapshot(candidate.url)
+                }
+            } catch { startupIssue = "Draft backup could not be restored; it is preserved: " + error.localizedDescription }
+        }
         if let startupIssue { activeWorkspace?.showNotice(startupIssue) }
         if let desktopStore { activeWorkspace?.offerRecoverySnapshots(directory: desktopStore.directory.appendingPathComponent("Recovery")) }
     }
@@ -126,7 +145,7 @@ final class EditorAppDelegate: NSObject, NSApplicationDelegate {
     }
 
     func applicationShouldHandleReopen(_ sender: NSApplication, hasVisibleWindows flag: Bool) -> Bool {
-        if workspaces.isEmpty { newWindow() }
+        if workspaces.isEmpty { launch(openURLs: [], projectURL: nil) }
         else if let active = activeWorkspace {
             active.window.deminiaturize(nil)
             active.window.makeKeyAndOrderFront(nil)
@@ -155,6 +174,15 @@ final class EditorAppDelegate: NSObject, NSApplicationDelegate {
         guard awaitingTermination, !workspaces.contains(where: { $0.hasRunningWork }) else { return }
         awaitingTermination = false
         NSApp.reply(toApplicationShouldTerminate: true)
+    }
+
+    func cancelTerminationAfterRecoveryFailure() {
+        guard closingApplication else { return }
+        closingApplication = false
+        let wasAwaiting = awaitingTermination
+        awaitingTermination = false
+        for workspace in workspaces { workspace.cancelPendingClose() }
+        if wasAwaiting { NSApp.reply(toApplicationShouldTerminate: false) }
     }
 }
 

@@ -2,6 +2,8 @@
 
 Performance investigations use the actual Swift/AppKit implementation in an isolated test application. Measurements and fixture files stay in ignored `.build/performance/` directories. Existing editor instances and unsaved user documents are preserved. This report covers macOS; Windows performance is unmeasured.
 
+For 0.9.0 recovery queue behavior, bounded write timings and current open/edit/lifecycle measurements, see [the latest resource report](release-090-performance.md). The older optimization results below retain their original workload and version scope.
+
 ## Workloads and measurement limits
 
 The opt-in runner creates a fresh GUI process for each case, at a fixed 1220 by 810 window size. Files repeat a source line containing ASCII, Chinese characters and an emoji. The default cases are 64 KiB, 1 MiB and 4 MiB file opens, plus four cycles of eight distinct 256 KiB files, both with and without retained undo history. Each file workload reads/decodes storage, opens a native pane, moves the caret to EOF, edits and undoes, scrolls twenty times, verifies EOF visibility, closes, then reopens the same file.

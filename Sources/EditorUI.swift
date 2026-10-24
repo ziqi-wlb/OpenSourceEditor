@@ -823,6 +823,7 @@ final class EditorWorkspace: NSObject, NSWindowDelegate,
     private var recovery: EditorRecovery?
     private var recoveryTimer: Timer?
     private var recoverySignature = ""
+    private var discardDraftsOnClose = false
     private var recoveryMenuItem: NSMenuItem?
     private var recoveryMessage = "Auto recovery is off"
     private var markdownModeCache: [ObjectIdentifier: MarkdownViewMode] = [:]
@@ -916,7 +917,7 @@ final class EditorWorkspace: NSObject, NSWindowDelegate,
     }
     @objc private func performNoticeAction() { noticeAction?() }
     @objc private func findRecoverySnapshots() {
-        let candidates = RecoveryCandidate.discover()
+        let candidates = RecoveryCandidate.discover(in: applicationOwner?.recoveryDirectory ?? EditorRecovery.defaultDirectory)
         if candidates.isEmpty { showNotice("No abandoned recovery snapshots found.") }
         else {
             showNotice("\(candidates.count) recovery snapshot(s) available", actionTitle: "Recover…") { [weak self] in self?.showRecoveryCandidates(candidates) }
@@ -930,7 +931,7 @@ final class EditorWorkspace: NSObject, NSWindowDelegate,
     func offerRecoverySnapshots(directory: URL = EditorRecovery.defaultDirectory) {
         let candidates = RecoveryCandidate.discover(in: directory)
         guard !candidates.isEmpty, noticeBar.isHidden else { return }
-        showNotice("\(candidates.count) recovery snapshot(s) available", actionTitle: "Recover…") { [weak self] in
+        showNotice("\(candidates.count) saved draft backup(s) available. Restore edits or discard drafts to use original files.", actionTitle: "Review Drafts…") { [weak self] in
             self?.showRecoveryCandidates(candidates)
         }
     }
@@ -939,11 +940,27 @@ final class EditorWorkspace: NSObject, NSWindowDelegate,
         menu.autoenablesItems = false
         for candidate in candidates {
             let date = DateFormatter.localizedString(from: candidate.modified, dateStyle: .short, timeStyle: .short)
-            let item = actionItem("\(date) · \(ByteCountFormatter.string(fromByteCount: Int64(candidate.bytes), countStyle: .file))") { [weak self] in
+            let item = NSMenuItem(title: "\(date) · \(ByteCountFormatter.string(fromByteCount: Int64(candidate.bytes), countStyle: .file))", action: nil, keyEquivalent: "")
+            let actions = NSMenu(title: "Saved draft")
+            actions.autoenablesItems = false
+            actions.addItem(actionItem("Restore Drafts") { [weak self] in
                 guard let self else { return }
                 do { _ = try self.restoreRecoverySnapshot(candidate.url) }
                 catch { self.showError(error) }
-            }
+            })
+            actions.addItem(actionItem("Discard Drafts and Open Originals…") { [weak self] in
+                guard let self else { return }
+                let alert = NSAlert()
+                alert.messageText = "Discard this draft backup?"
+                alert.informativeText = "Unsaved edits and untitled notes in this backup will be removed. Original files will be reopened from disk."
+                let cancel = EditorDialogs.addCancelButton(to: alert)
+                alert.addButton(withTitle: "Discard Drafts")
+                guard self.runDialog(alert, cancelButton: cancel) == .alertSecondButtonReturn else { return }
+                do { _ = try self.discardRecoverySnapshot(candidate.url) }
+                catch { self.showError(error) }
+            })
+            actions.addItem(actionItem("Later (Keep Backup)") {})
+            item.submenu = actions
             item.toolTip = candidate.url.path
             menu.addItem(item)
         }
@@ -962,7 +979,8 @@ final class EditorWorkspace: NSObject, NSWindowDelegate,
         return .init(files: files, selectedPath: currentDocument?.fileURL?.path, projectPath: projectRoot?.url.path,
             split: splitEnabled, sidebarVisible: projectSplit.arrangedSubviews.first?.isHidden == false,
             frame: [Double(rect.origin.x), Double(rect.origin.y), Double(rect.width), Double(rect.height)],
-            scrollY: Double(currentTextView?.enclosingScrollView?.contentView.bounds.origin.y ?? 0))
+            scrollY: Double(currentTextView?.enclosingScrollView?.contentView.bounds.origin.y ?? 0),
+            recoveryFileName: discardDraftsOnClose ? nil : recovery?.url.lastPathComponent)
     }
 
     func restoreDesktop(_ saved: SavedWorkspace) {
@@ -1038,7 +1056,7 @@ final class EditorWorkspace: NSObject, NSWindowDelegate,
         NSApp.activate(ignoringOtherApps: true)
         window.makeFirstResponder(currentTextView)
         #if !EDITOR_TESTS
-        if UserDefaults.standard.bool(forKey: "autoRecovery") { setAutoRecovery(true) }
+        if UserDefaults.standard.object(forKey: "autoRecovery") as? Bool != false { setAutoRecovery(true) }
         startFileMonitoring()
         #endif
     }
@@ -1185,10 +1203,27 @@ final class EditorWorkspace: NSObject, NSWindowDelegate,
 
     func confirmDocumentsBeforeClosing() -> Bool {
         window.makeKeyAndOrderFront(nil)
-        for document in documents where document.isModified {
-            if !confirmClose(document) { return false }
+        discardDraftsOnClose = false
+        guard documents.contains(where: \.isModified) else { return true }
+        let alert = NSAlert()
+        alert.messageText = "Keep unsaved edits for next time?"
+        alert.informativeText = "Keep Drafts stores a separate backup without changing original files. Save All writes your files. Discard Drafts removes this window's backup; originals stay unchanged."
+        alert.addButton(withTitle: "Keep Drafts")
+        alert.addButton(withTitle: "Save All")
+        alert.addButton(withTitle: "Discard Drafts")
+        let cancel = EditorDialogs.addCancelButton(to: alert)
+        switch runDialog(alert, cancelButton: cancel) {
+        case .alertFirstButtonReturn:
+            do {
+                _ = try makeRecoverySnapshot()
+                if recovery == nil { recovery = EditorRecovery(directory: applicationOwner?.recoveryDirectory ?? EditorRecovery.defaultDirectory) }
+                return true
+            }
+            catch { showError(error); return false }
+        case .alertSecondButtonReturn: return saveAllDocuments()
+        case .alertThirdButtonReturn: discardDraftsOnClose = true; return true
+        default: return false
         }
-        return true
     }
 
     func prepareForApplicationTermination() {
@@ -1200,14 +1235,12 @@ final class EditorWorkspace: NSObject, NSWindowDelegate,
 
     func windowShouldClose(_ sender: NSWindow) -> Bool {
         guard !pendingTermination, !pendingWindowClose, confirmDocumentsBeforeClosing() else { return false }
-        if hasRunningWork {
-            pendingWindowClose = true
-            freezeForClose()
-            if isBuildRunning { buildRunner.cancel() }
-            if isPluginRunning { pluginRunner?.cancel() }
-            return false
-        }
-        return true
+        pendingWindowClose = true
+        freezeForClose()
+        if isBuildRunning { buildRunner.cancel() }
+        if isPluginRunning { pluginRunner?.cancel() }
+        finishPendingClose()
+        return false
     }
 
     func windowDidBecomeKey(_ notification: Notification) { activateMenus() }
@@ -1396,6 +1429,24 @@ final class EditorWorkspace: NSObject, NSWindowDelegate,
         item(tools, "Choose Plugin…", #selector(choosePlugin))
         item(tools, "Choose Python Interpreter…", #selector(choosePython))
         let preferences = menu("Preferences")
+        let fonts = NSMenu(title: "Editor Font")
+        fonts.autoenablesItems = false
+        let editorFontItem = NSMenuItem(title: "Editor Font", action: nil, keyEquivalent: "")
+        editorFontItem.submenu = fonts
+        preferences.addItem(editorFontItem)
+        let systemFont = NSFont.monospacedSystemFont(ofSize: 12, weight: .regular)
+        let choices = [("System Monospaced", systemFont.fontName)] + ["Menlo", "Monaco", "Courier New"].compactMap { name -> (String, String)? in
+            NSFont(name: name, size: 12).map { (name, $0.fontName) }
+        }
+        for (title, name) in choices {
+            let current = NSFont(name: configuration?.fontName ?? "Menlo", size: 12)?.fontName
+            fonts.addItem(actionItem(title, checked: current == name) { [weak self] in
+                guard let self else { return }
+                var config = self.configuration ?? EditorConfiguration()
+                config.fontName = name
+                self.applyPresentationConfiguration(config)
+            })
+        }
         let themes = NSMenu(title: "Theme")
         themes.autoenablesItems = false
         let themeItem = NSMenuItem(title: "Theme", action: nil, keyEquivalent: "")
@@ -1846,13 +1897,15 @@ final class EditorWorkspace: NSObject, NSWindowDelegate,
     private func freezeForClose() {
         searchDebounce?.cancel(); searchWorker.cancel(); pendingFindAction = nil
         fileMonitor?.stop(); fileMonitor = nil; diskQueue.cancelAllOperations(); diskChecks.removeAll()
-        finishRecovery()
         markdownPreview?.stop()
         projectIndexWork?.cancel()
         projectSearchPanel?.close()
         for pane in panes { pane.textView.isEditable = false }
         window.makeFirstResponder(nil)
         updateStatus()
+        // If final capture fails synchronously, cancellation must happen after
+        // freezing, so the error path leaves the editor usable.
+        finishRecovery(forClose: true)
     }
 
     @objc private func loadConfiguration() {
@@ -2539,7 +2592,7 @@ final class EditorWorkspace: NSObject, NSWindowDelegate,
         #endif
         if enabled {
             guard recovery == nil else { return }
-            recovery = EditorRecovery(directory: directory ?? EditorRecovery.defaultDirectory)
+            recovery = EditorRecovery(directory: directory ?? applicationOwner?.recoveryDirectory ?? EditorRecovery.defaultDirectory)
             recoverySignature = ""
             recoveryMenuItem?.state = .on
             recoveryMessage = "Auto recovery is enabled; snapshots update every 5 seconds"
@@ -2550,19 +2603,18 @@ final class EditorWorkspace: NSObject, NSWindowDelegate,
     }
 
     private func updateRecoverySnapshot() {
-        guard let recovery, !recovery.isWriting, !recovery.isFinishing else { return }
+        guard let recovery, !recovery.isFinishing else { return }
         let modified = documents.filter(\.isModified)
         let signature = modified.map { "\(ObjectIdentifier($0)):\($0.revision):\($0.encoding):\($0.settings)" }.joined(separator: "|")
         guard signature != recoverySignature else { return }
-        guard modified.count <= 128, modified.reduce(0, { $0 + $1.storage.length }) <= EditorRecovery.maximumUTF16 else {
-            recoveryMessage = "Auto recovery paused: capacity exceeded. Save files or use Save Session. Last snapshot may be older."
+        let snapshot: EditorSession?
+        do { snapshot = try makeRecoverySnapshot() }
+        catch {
+            recoveryMessage = "Auto recovery paused: " + error.localizedDescription + " Last snapshot may be older."
+            showNotice(recoveryMessage)
             status.location.toolTip = recoveryMessage
             return
         }
-        if let document = currentDocument, let view = currentTextView { selectionCache[ObjectIdentifier(document)] = view.selectedRanges }
-        let selected = modified.firstIndex(where: { $0 === currentDocument }) ?? 0
-        let snapshot = modified.isEmpty ? nil : EditorSession(projectPath: projectRoot?.url.path, selectedIndex: selected, split: splitEnabled,
-            documents: modified.map { EditorSession.Document(document: $0, ranges: Array((selectionCache[ObjectIdentifier($0)]?.map(\.rangeValue) ?? []).prefix(4096))) })
         recoverySignature = signature
         recovery.write(snapshot) { [weak self, weak recovery] error in
             guard let self, self.recovery === recovery, !self.pendingWindowClose, !self.pendingTermination else { return }
@@ -2572,16 +2624,62 @@ final class EditorWorkspace: NSObject, NSWindowDelegate,
         }
     }
 
-    private func finishRecovery() {
+    private func makeRecoverySnapshot() throws -> EditorSession? {
+        let modified = documents.filter(\.isModified)
+        guard !modified.isEmpty else { return nil }
+        guard modified.count <= 128, modified.reduce(0, { $0 + $1.storage.length }) <= EditorRecovery.maximumUTF16 else {
+            throw EditorFailure.invalidEdit("Draft backup exceeds 4 million UTF-16 units or 128 modified documents. Save files or use Save Session before closing.")
+        }
+        if let document = currentDocument, let view = currentTextView { selectionCache[ObjectIdentifier(document)] = view.selectedRanges }
+        let selected = modified.firstIndex(where: { $0 === currentDocument }) ?? 0
+        return EditorSession(projectPath: projectRoot?.url.path, selectedIndex: selected, split: splitEnabled,
+            documents: modified.map { EditorSession.Document(document: $0,
+                ranges: Array((selectionCache[ObjectIdentifier($0)]?.map(\.rangeValue) ?? []).prefix(4096))) }, workspace: desktopSnapshot)
+    }
+
+    private func finishRecovery(forClose: Bool = false) {
         recoveryTimer?.invalidate(); recoveryTimer = nil
+        // Keep Drafts works even if the periodic backup preference is disabled.
+        if forClose, recovery == nil, !discardDraftsOnClose, documents.contains(where: \.isModified) {
+            recovery = EditorRecovery(directory: applicationOwner?.recoveryDirectory ?? EditorRecovery.defaultDirectory)
+        }
         guard let owner = recovery, !owner.isFinishing else { return }
         recoveryMenuItem?.state = .off
-        owner.finish { [self, owner] error in
-            if recovery === owner { recovery = nil; recoverySignature = "" }
-            recoveryMessage = error.map { "Recovery snapshot cleanup failed: " + $0.localizedDescription } ?? "Auto recovery is off"
+        let complete: (Error?) -> Void = { [self, owner] error in
+            if let error {
+                recoveryMessage = "Draft backup failed: " + error.localizedDescription
+                if forClose {
+                    cancelPendingClose()
+                    applicationOwner?.cancelTerminationAfterRecoveryFailure()
+                }
+                showNotice(recoveryMessage)
+            } else {
+                if recovery === owner { recovery = nil; recoverySignature = "" }
+                recoveryMessage = "Draft backup completed"
+            }
             status.location.toolTip = recoveryMessage
             finishPendingClose()
         }
+        if forClose, !discardDraftsOnClose {
+            do {
+                var snapshot = try makeRecoverySnapshot()
+                snapshot?.closedNormally = true
+                owner.finish(preserving: snapshot, completion: complete)
+            }
+            catch { complete(error) }
+        } else { owner.discard(completion: complete) }
+    }
+
+    func cancelPendingClose() {
+        guard pendingTermination || pendingWindowClose else { return }
+        pendingTermination = false; pendingWindowClose = false; discardDraftsOnClose = false
+        for pane in panes { pane.textView.isEditable = true }
+        monitoredPaths = []; refreshFileMonitor()
+        if let recovery, !recovery.isFinishing, recoveryTimer == nil {
+            recoveryTimer = Timer.scheduledTimer(withTimeInterval: 5, repeats: true) { [weak self] _ in self?.updateRecoverySnapshot() }
+        }
+        window.makeFirstResponder(currentTextView)
+        updateStatus()
     }
 
     @objc private func recoverSnapshot() {
@@ -2595,14 +2693,57 @@ final class EditorWorkspace: NSObject, NSWindowDelegate,
         do { _ = try restoreRecoverySnapshot(url) } catch { showError(error) }
     }
     @discardableResult
-    func restoreRecoverySnapshot(_ url: URL) throws -> EditorWorkspace {
+    func restoreRecoverySnapshot(_ url: URL, into existing: EditorWorkspace? = nil) throws -> EditorWorkspace {
         guard !EditorRecovery.activeURLs.contains(url.standardizedFileURL) else {
             throw EditorFailure.invalidEdit("This snapshot belongs to a live window. Use that window or Save Session instead.")
         }
         let session = try EditorSession.load(url)
         guard let applicationOwner else { throw EditorFailure.invalidEdit("A recovery requires an application workspace owner.") }
+        let workspace = existing ?? applicationOwner.newWindow()
+        if existing == nil, let saved = session.workspace { workspace.restoreDesktop(saved) }
+        guard workspace.restoreSession(session, preservingCleanDocuments: existing != nil || session.workspace != nil) else {
+            throw EditorFailure.invalidEdit("Draft could not be restored; backup retained.")
+        }
+        // Transfer recovery ownership only after the replacement backup is on
+        // disk. A crash during restore cannot silently consume the only copy.
+        workspace.setAutoRecovery(true, directory: url.deletingLastPathComponent())
+        if let owner = workspace.recovery, var snapshot = try workspace.makeRecoverySnapshot() {
+            snapshot.closedNormally = session.closedNormally == true
+            EditorRecovery.activeURLs.insert(url.standardizedFileURL)
+            owner.write(snapshot) { [weak workspace] error in
+                if let error { workspace?.showNotice("Draft restored; original backup retained: " + error.localizedDescription) }
+                else {
+                    do { try FileManager.default.removeItem(at: url) }
+                    catch { workspace?.showNotice("Draft restored; previous backup could not be removed: " + error.localizedDescription) }
+                }
+                EditorRecovery.activeURLs.remove(url.standardizedFileURL)
+            }
+        }
+        workspace.showNotice("Drafts restored. Save writes your file; File → Revert File discards edits and reloads the original. Changed or missing originals recover as untitled notes.")
+        return workspace
+    }
+    @discardableResult
+    func discardRecoverySnapshot(_ url: URL) throws -> EditorWorkspace {
+        guard !EditorRecovery.activeURLs.contains(url.standardizedFileURL) else {
+            throw EditorFailure.invalidEdit("This snapshot belongs to a live window.")
+        }
+        let session = try EditorSession.load(url)
+        guard let applicationOwner else { throw EditorFailure.invalidEdit("A recovery requires an application workspace owner.") }
+        // Open every original before consuming the backup. Missing/unreadable
+        // files keep it available and report failure instead of losing edits.
+        let originals = try session.documents.compactMap { entry -> EditorDocument? in
+            guard let path = entry.path else { return nil }
+            return try EditorDocument.open(URL(fileURLWithPath: path), encoding: entry.diskEncoding, settings: entry.settings ?? DocumentSettings())
+        }
         let workspace = applicationOwner.newWindow()
-        _ = workspace.restoreSession(session)
+        if !originals.isEmpty {
+            for view in workspace.editorSplit.arrangedSubviews { workspace.editorSplit.removeArrangedSubview(view); view.removeFromSuperview() }
+            workspace.panes.removeAll()
+            workspace.documents = originals; workspace.selectedIndex = min(session.selectedIndex, originals.count - 1)
+            workspace.rebuildPanes(); workspace.rebuildTabs(); workspace.updateStatus(); workspace.refreshFileMonitor()
+        }
+        try FileManager.default.removeItem(at: url)
+        workspace.showNotice("Draft backup discarded. Original files were opened from disk; no source file was changed.")
         return workspace
     }
     @objc private func revealRecoveryFolder() {
@@ -2614,11 +2755,14 @@ final class EditorWorkspace: NSObject, NSWindowDelegate,
     }
 
     @discardableResult
-    func restoreSession(_ session: EditorSession) -> Bool {
+    func restoreSession(_ session: EditorSession, preservingCleanDocuments: Bool = false) -> Bool {
         guard !isBuildRunning, !isPluginRunning else {
             showError(EditorFailure.invalidEdit("Wait for the current build or plugin to finish before restoring a session."))
             return false
         }
+        let priorSelections = selectionCache
+        let priorModes = markdownModeCache
+        let cleanDocuments = preservingCleanDocuments ? documents.filter { !$0.isModified && $0.fileURL != nil } : []
         for document in documents where document.isModified {
             if !confirmClose(document) { return false }
         }
@@ -2627,11 +2771,33 @@ final class EditorWorkspace: NSObject, NSWindowDelegate,
         // Clear old pane resources before replacing the document owner list.
         for view in editorSplit.arrangedSubviews { editorSplit.removeArrangedSubview(view); view.removeFromSuperview() }
         panes.removeAll()
-        documents = restored.map(\.0)
+        let restoredPaths = Set(restored.compactMap { $0.0.fileURL?.path })
+        let remaining = cleanDocuments.filter { !restoredPaths.contains($0.fileURL!.path) }
+        documents = restored.map(\.0) + remaining
+        if preservingCleanDocuments, let files = session.workspace?.files {
+            let order = Dictionary(uniqueKeysWithValues: files.enumerated().map { ($0.element.path, $0.offset) })
+            documents = documents.enumerated().sorted { lhs, rhs in
+                let a = lhs.element.fileURL.map(\.path).flatMap { order[$0] } ?? files.count + lhs.offset
+                let b = rhs.element.fileURL.map(\.path).flatMap { order[$0] } ?? files.count + rhs.offset
+                return a < b
+            }.map(\.element)
+        }
         markdownModeCache.removeAll()
         selectionCache = Dictionary(uniqueKeysWithValues: restored.map { document, ranges in
             (ObjectIdentifier(document), ranges.map { NSValue(range: $0) })
         })
+        if preservingCleanDocuments {
+            for document in remaining {
+                let identity = ObjectIdentifier(document)
+                selectionCache[identity] = priorSelections[identity]
+                markdownModeCache[identity] = priorModes[identity]
+            }
+            for entry in session.workspace?.files ?? [] {
+                if let document = documents.first(where: { $0.fileURL?.path == entry.path }) {
+                    markdownModeCache[ObjectIdentifier(document)] = entry.markdownMode == "preview" ? .preview : entry.markdownMode == "sideBySide" ? .sideBySide : .edit
+                }
+            }
+        }
         projectDocument = nil
         projectRoot = nil
         projectFiles = []
@@ -2644,7 +2810,11 @@ final class EditorWorkspace: NSObject, NSWindowDelegate,
         splitEnabled = session.split
         // Prevent selectDocument from caching the already-disposed selection over
         // a restored document before it creates the new panes.
-        selectedIndex = session.selectedIndex
+        let selectedDraft = restored[session.selectedIndex].0
+        selectedIndex = documents.firstIndex(where: { $0 === selectedDraft }) ?? 0
+        if preservingCleanDocuments, let selectedPath = session.workspace?.selectedPath,
+           !session.documents.contains(where: { $0.path == selectedPath }),
+           let index = documents.firstIndex(where: { $0.fileURL?.path == selectedPath }) { selectedIndex = index }
         activePane = 0
         rebuildPanes()
         rebuildTabs()
@@ -2698,6 +2868,7 @@ final class EditorWorkspace: NSObject, NSWindowDelegate,
             for pane in panes { pane.scheduleHighlight() }
             updateStatus()
             outline.reloadData()
+            updateRecoverySnapshot()
             return true
         } catch {
             showError(error)
@@ -2746,6 +2917,7 @@ final class EditorWorkspace: NSObject, NSWindowDelegate,
             resetSelectionsAfterReload(document)
             rebuildTabs()
             updateStatus()
+            updateRecoverySnapshot()
             return true
         } catch { showError(error); return false }
     }
@@ -2834,6 +3006,7 @@ final class EditorWorkspace: NSObject, NSWindowDelegate,
         if documents.isEmpty { addDocument(EditorDocument(settings: documentDefaults)) }
         else { selectDocument(min(documents.count - 1, index < oldSelected ? oldSelected - 1 : oldSelected)) }
         if projectRoot == nil { outline.reloadData() }
+        updateRecoverySnapshot()
         return true
     }
 

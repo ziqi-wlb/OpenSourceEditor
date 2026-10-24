@@ -10,7 +10,7 @@ A stable release requires recoverable file operations, Unicode/IME correctness, 
 
 | Area | Current capability | Required additional acceptance |
 | --- | --- | --- |
-| File lifecycle | Strict decode, atomic save, disk-conflict checks, save/close cancellation, metadata restart, snapshot discovery, external-change notices and opt-in recovery | Native chooser acceptance, long sessions, OS/hardware interruption and power-loss recovery |
+| File lifecycle | Strict decode, atomic save, disk-conflict checks, save/close cancellation, metadata restart, default independent drafts, normal restart recovery, explicit discard and external-change protection | Native chooser acceptance, long sessions, OS/hardware interruption and power-loss recovery |
 | Editing | Native TextKit, multi-selection, undo, indentation, line/comment commands, split storage | Real IME, rectangular selection, large-file edit engine, richer grammars |
 | Markdown | Edit/preview/side-by-side, templates, list/task editing, image paste, headings, HTML export | Prolonged editing, broader Markdown conformance, real wheel/inertia and accessibility |
 | Project | Lazy tree, file create/move/trash, FSEvents refresh, Quick Open, background literal search | Ignore settings, project regex/replace, dirty-buffer search, external diff view |
@@ -20,6 +20,8 @@ A stable release requires recoverable file operations, Unicode/IME correctness, 
 | Accessibility | Native controls, named preview/search controls | VoiceOver, keyboard-only and high-contrast manual acceptance |
 
 ## Current implementation stage
+
+macOS 0.9.0 adds retained draft backups on normal close, automatic restart recovery, explicit discard-and-reload, failed-write cancellation and persisted installed-font choices. Local Universal acceptance passed 598 checks with 13 explicit skips, including real two-window quit/restart. [Architecture](architecture.md), [feature matrix](features.md) and [current resource measurements](release-090-performance.md) describe the implementation and limits. Multi-file main-thread stalls and the broader industrial acceptance gaps remain.
 
 macOS 0.8.0 adds preferences/workspace metadata persistence, recovery snapshot discovery, native file-event monitoring, scoped sidebar file management, Markdown note entry and bounded asynchronous single-file search. Clean disk updates reload; modified buffers remain intact. Search refuses incomplete replacement and obsolete revisions. [Implementation and validation](daily-use-implementation.md) documents capacities and remaining acceptance.
 

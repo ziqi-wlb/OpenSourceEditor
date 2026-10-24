@@ -17,6 +17,7 @@ struct SavedWorkspace: Codable {
     var sidebarVisible: Bool
     var frame: [Double]
     var scrollY: Double
+    var recoveryFileName: String? = nil
 }
 
 struct SavedDesktop: Codable {
@@ -28,6 +29,10 @@ struct SavedDesktop: Codable {
             throw EditorFailure.invalidEdit("Workspace state exceeds 32 windows or 256 files.")
         }
         for workspace in workspaces {
+            if let name = workspace.recoveryFileName,
+               (name != URL(fileURLWithPath: name).lastPathComponent || !name.hasSuffix(".json")) {
+                throw EditorFailure.invalidEdit("Invalid recovery file identity.")
+            }
             guard workspace.frame.count == 4, workspace.frame.allSatisfy(\.isFinite),
                   workspace.frame[2] > 0, workspace.frame[3] > 0,
                   workspace.scrollY.isFinite, workspace.scrollY >= 0,
