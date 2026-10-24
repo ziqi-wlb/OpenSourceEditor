@@ -1,7 +1,7 @@
 import AppKit
 
 enum LifecycleUITests {
-    @MainActor static func run(delegate: EditorAppDelegate, directory: URL) async -> (passed: Int, failed: Int) {
+    @MainActor static func run(delegate: EditorWorkspace, directory: URL) async -> (passed: Int, failed: Int) {
         var passed = 0, failed = 0
         func check(_ name: String, _ value: Bool) {
             if value { passed += 1; print("PASS \(name)") }
@@ -19,7 +19,7 @@ enum LifecycleUITests {
                 if let event = NSEvent.keyEvent(with: type, location: .zero, modifierFlags: modifiers,
                     timestamp: ProcessInfo.processInfo.systemUptime,
                     windowNumber: NSApp.modalWindow?.windowNumber ?? NSApp.keyWindow?.windowNumber ?? delegate.window.windowNumber,
-                    context: nil, characters: text, charactersIgnoringModifiers: text.lowercased(), isARepeat: false, keyCode: code) {
+                    context: nil, characters: text, charactersIgnoringModifiers: modifiers.contains(.shift) ? text.uppercased() : text.lowercased(), isARepeat: false, keyCode: code) {
                     NSApp.postEvent(event, atStart: false)
                 }
             }

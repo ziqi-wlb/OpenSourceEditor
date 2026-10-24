@@ -10,7 +10,7 @@ if arguments.contains("--help") {
     exit(0)
 }
 #if EDITOR_TESTS
-if arguments.contains("--ui-self-test") { setbuf(stdout, nil) }
+if arguments.contains("--ui-self-test") || arguments.contains("--multi-window-ui-test") { setbuf(stdout, nil) }
 if arguments.contains("--self-test") {
     exit(CoreTestRunner.run())
 }
@@ -23,7 +23,7 @@ if let flag = arguments.firstIndex(of: "--contract-test"), flag + 1 < arguments.
 if arguments.contains("--benchmark") { exit(BenchmarkRunner.run()) }
 let application = NSApplication.shared
 application.setActivationPolicy(.regular)
-let delegate = EditorAppDelegate(recentFiles: RecentFiles(defaults: arguments.contains("--ui-self-test") ? nil : .standard))
+let delegate = EditorAppDelegate(recentFiles: RecentFiles(defaults: (arguments.contains("--ui-self-test") || arguments.contains("--multi-window-ui-test")) ? nil : .standard))
 application.delegate = delegate
 if arguments.contains("--service-test") {
     application.setActivationPolicy(.prohibited)
@@ -31,7 +31,12 @@ if arguments.contains("--service-test") {
     application.run()
     exit(1)
 }
-if let flag = arguments.firstIndex(of: "--ui-self-test"), flag + 1 < arguments.count {
+if arguments.contains("--multi-window-quit-test") {
+    Timer.scheduledTimer(withTimeInterval: 0.1, repeats: false) { _ in _ = MultiWindowQuitTests(app: delegate) }
+    application.run()
+    exit(0)
+}
+if let flag = arguments.firstIndex(where: { $0 == "--ui-self-test" || $0 == "--multi-window-ui-test" }), flag + 1 < arguments.count {
     let directory = URL(fileURLWithPath: arguments[flag + 1], isDirectory: true)
         .standardizedFileURL.resolvingSymlinksInPath()
     try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
@@ -39,9 +44,15 @@ if let flag = arguments.firstIndex(of: "--ui-self-test"), flag + 1 < arguments.c
     let second = directory.appendingPathComponent("second.txt")
     try "// first\nlet value = 1\n".write(to: first, atomically: true, encoding: .utf8)
     try "second\n".write(to: second, atomically: true, encoding: .utf8)
-    delegate.start(openURLs: [first, second], projectURL: nil)
+    let workspace = delegate.newWindow(openURLs: [first, second], projectURL: nil)
     Timer.scheduledTimer(withTimeInterval: 0.1, repeats: false) { _ in
-        Task { @MainActor in exit(await UITestRunner.run(delegate: delegate, directory: directory)) }
+        Task { @MainActor in
+            if arguments[flag] == "--multi-window-ui-test" {
+                let result = await MultiWindowUITests.run(delegate: workspace, directory: directory)
+                exit(result.failed == 0 ? 0 : 1)
+            }
+            exit(await UITestRunner.run(delegate: workspace, directory: directory))
+        }
     }
     application.run()
     exit(1)
@@ -65,5 +76,6 @@ while index < arguments.count {
     }
     index += 1
 }
-delegate.start(openURLs: openURLs, projectURL: projectURL)
+if forwardToRunningEditor(openURLs: openURLs, projectURL: projectURL) { exit(0) }
+delegate.newWindow(openURLs: openURLs, projectURL: projectURL)
 application.run()

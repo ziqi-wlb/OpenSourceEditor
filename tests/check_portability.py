@@ -20,6 +20,8 @@ assert not list((release/'Resources').rglob('*.pyc'))
 assert not list((release/'Resources').rglob('__pycache__'))
 assert not list((release/'Resources').rglob('*.swift'))
 symbols=subprocess.check_output(['nm',str(release/'MacOS/source-editor')],text=True,stderr=subprocess.DEVNULL)
-for name in ('UITestRunner','CoreTestRunner','BenchmarkRunner'):
+for name in ('UITestRunner','CoreTestRunner','BenchmarkRunner','ServiceTestRunner',
+             'PreferencesTestRunner','DocumentSettingsTestRunner','ContractTestRunner',
+             'LifecycleUITests','ContextMenuUITests','MultiWindowUITests','MultiWindowQuitTests'):
     assert name not in symbols, 'Test code bundled in release'
 print('Portable source paths and production-only bundle verified')

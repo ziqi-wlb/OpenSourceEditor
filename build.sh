@@ -34,6 +34,9 @@ for editor_cpu in "${editor_arches[@]}"; do
     xcrun swiftc "${editor_flags[@]}" -target "${editor_cpu}-apple-macosx13.0" "${editor_sources[@]}" -o "$editor_output" -framework AppKit -framework CryptoKit
     editor_outputs+=("$editor_output")
 done
+# Replace the executable inode. Overwriting a running Mach-O can leave macOS
+# using its previous cached code signature and cause a SIGKILL on the next run.
+rm -f "$editor_bundle/Contents/MacOS/source-editor"
 if [ "${#editor_outputs[@]}" -gt 1 ]; then
     xcrun lipo -create "${editor_outputs[@]}" -output "$editor_bundle/Contents/MacOS/source-editor"
 else

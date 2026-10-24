@@ -1,7 +1,7 @@
 import AppKit
 
 enum UITestRunner {
-    @MainActor static func run(delegate: EditorAppDelegate, directory: URL) async -> Int32 {
+    @MainActor static func run(delegate: EditorWorkspace, directory: URL) async -> Int32 {
         var passed = 0, failed = 0
         func check(_ name: String, _ value: Bool) {
             if value { passed += 1; print("PASS \(name)") }
@@ -24,7 +24,7 @@ enum UITestRunner {
             for type in [NSEvent.EventType.keyDown, .keyUp] {
                 if let event = NSEvent.keyEvent(with: type, location: .zero, modifierFlags: modifiers,
                     timestamp: ProcessInfo.processInfo.systemUptime, windowNumber: NSApp.modalWindow?.windowNumber ?? NSApp.keyWindow?.windowNumber ?? delegate.window.windowNumber,
-                    context: nil, characters: characters, charactersIgnoringModifiers: ignoringModifiers ?? characters.lowercased(),
+                    context: nil, characters: characters, charactersIgnoringModifiers: ignoringModifiers ?? (modifiers.contains(.shift) ? characters.uppercased() : characters.lowercased()),
                     isARepeat: false, keyCode: keyCode) {
                     NSApp.postEvent(event, atStart: false)
                 }
@@ -526,6 +526,8 @@ enum UITestRunner {
         passed += lifecycle.passed; failed += lifecycle.failed
         let context = await ContextMenuUITests.run(delegate: delegate, directory: directory)
         passed += context.passed; failed += context.failed
+        let windows = await MultiWindowUITests.run(delegate: delegate, directory: directory)
+        passed += windows.passed; failed += windows.failed
         print("UI tests: \(passed) passed, \(failed) failed")
         delegate.window.orderOut(nil)
         return failed == 0 ? 0 : 1

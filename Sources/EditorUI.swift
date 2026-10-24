@@ -757,8 +757,11 @@ private final class CommandPalette: NSObject, NSTableViewDataSource, NSTableView
     }
 }
 
-final class EditorAppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate,
+final class EditorWorkspace: NSObject, NSWindowDelegate,
     NSTextViewDelegate, NSOutlineViewDataSource, NSOutlineViewDelegate, NSSearchFieldDelegate, NSMenuItemValidation {
+    weak var applicationOwner: EditorAppDelegate?
+    private var mainMenu: NSMenu?
+    private var windowMenu: NSMenu?
     private(set) var window: NSWindow!
     private(set) var documents: [EditorDocument] = []
     private(set) var selectedIndex = 0
@@ -815,7 +818,6 @@ final class EditorAppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate
     private var isPluginRunning = false
     private var pendingTermination = false
     private var pendingWindowClose = false
-    private var hasApprovedWindowClose = false
     private var configuration: EditorConfiguration?
     private var pluginURL: URL?
     private var pythonURL = URL(fileURLWithPath: "/usr/bin/python3")
@@ -837,11 +839,12 @@ final class EditorAppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate
         return panes.indices.contains(activePane) ? panes[activePane].textView : panes.first?.textView
     }
 
-    func start(openURLs: [URL], projectURL: URL?) {
+    func start(openURLs: [URL], projectURL: URL?, initialConfiguration: EditorConfiguration? = nil) {
         guard !started else { return }
         started = true
+        configuration = initialConfiguration
         NSApp.setActivationPolicy(.regular)
-        NSApp.appearance = NSAppearance(named: .darkAqua)
+        NSApp.appearance = NSAppearance(named: EditorTheme.isLight ? .aqua : .darkAqua)
         makeMenus()
         makeWindow()
         palette = CommandPalette(parent: window)
@@ -855,49 +858,61 @@ final class EditorAppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate
         window.makeFirstResponder(currentTextView)
     }
 
-    func application(_ sender: NSApplication, openFiles filenames: [String]) {
-        if !started { start(openURLs: filenames.map { URL(fileURLWithPath: $0) }, projectURL: nil) }
-        else { for filename in filenames { openDocument(URL(fileURLWithPath: filename)) } }
-        sender.reply(toOpenOrPrint: .success)
-    }
+    var hasRunningWork: Bool { isBuildRunning || isPluginRunning }
 
-    func applicationShouldTerminateAfterLastWindowClosed(_ sender: NSApplication) -> Bool { true }
-    func applicationSupportsSecureRestorableState(_ app: NSApplication) -> Bool { true }
-
-    func applicationShouldTerminate(_ sender: NSApplication) -> NSApplication.TerminateReply {
-        guard started else { return .terminateNow }
-        if hasApprovedWindowClose && !isBuildRunning && !isPluginRunning { return .terminateNow }
-        for document in documents where document.isModified {
-            if !confirmClose(document) { return .terminateCancel }
-        }
-        if isBuildRunning || isPluginRunning {
-            pendingTermination = true
-            freezeForClose()
-            if isBuildRunning { buildRunner.cancel() }
-            if isPluginRunning { pluginRunner?.cancel() }
-            return .terminateLater
-        }
-        return .terminateNow
-    }
-
-    func windowShouldClose(_ sender: NSWindow) -> Bool {
+    func confirmDocumentsBeforeClosing() -> Bool {
+        window.makeKeyAndOrderFront(nil)
         for document in documents where document.isModified {
             if !confirmClose(document) { return false }
         }
-        if isBuildRunning || isPluginRunning {
+        return true
+    }
+
+    func prepareForApplicationTermination() {
+        pendingTermination = true
+        freezeForClose()
+        if isBuildRunning { buildRunner.cancel() }
+        if isPluginRunning { pluginRunner?.cancel() }
+    }
+
+    func windowShouldClose(_ sender: NSWindow) -> Bool {
+        guard !pendingTermination, !pendingWindowClose, confirmDocumentsBeforeClosing() else { return false }
+        if hasRunningWork {
             pendingWindowClose = true
             freezeForClose()
             if isBuildRunning { buildRunner.cancel() }
             if isPluginRunning { pluginRunner?.cancel() }
             return false
         }
-        hasApprovedWindowClose = true
         return true
     }
 
+    func windowDidBecomeKey(_ notification: Notification) { activateMenus() }
+
+    func activateMenus() {
+        if let mainMenu { NSApp.mainMenu = mainMenu; NSApp.windowsMenu = windowMenu }
+        refreshRecentFilesMenu()
+        updateStatus()
+    }
+
+    func windowWillClose(_ notification: Notification) {
+        palette?.dismiss()
+        projectIndexWork?.cancel()
+        NotificationCenter.default.removeObserver(self)
+        applicationOwner?.windowClosed(self)
+    }
+
+    deinit {
+        projectIndexWork?.cancel()
+        NotificationCenter.default.removeObserver(self)
+    }
+
+    @objc private func newWindow() { applicationOwner?.newWindow() }
+    @objc private func mergeWindows() { applicationOwner?.mergeWindows() }
+
     private func makeMenus() {
         let main = NSMenu()
-        NSApp.mainMenu = main
+        mainMenu = main
         func menu(_ title: String) -> NSMenu {
             let item = NSMenuItem(title: title, action: nil, keyEquivalent: "")
             let result = NSMenu(title: title)
@@ -906,7 +921,8 @@ final class EditorAppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate
             return result
         }
         func item(_ menu: NSMenu, _ title: String, _ selector: Selector, _ key: String = "", _ modifiers: NSEvent.ModifierFlags = .command) {
-            let value = NSMenuItem(title: title, action: selector, keyEquivalent: key)
+            let equivalent = modifiers.contains(.shift) ? key.uppercased() : key
+            let value = NSMenuItem(title: title, action: selector, keyEquivalent: equivalent)
             value.keyEquivalentModifierMask = modifiers
             value.target = self
             menu.addItem(value)
@@ -920,6 +936,7 @@ final class EditorAppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate
         item(app, "Quit Source Editor", #selector(quit), "q")
         let file = menu("File")
         item(file, "New File", #selector(newFile), "n")
+        item(file, "New Window", #selector(newWindow), "n", [.command, .shift])
         item(file, "Open…", #selector(openFile), "o")
         item(file, "Open Folder…", #selector(openFolder), "o", [.command, .shift])
         let recent = NSMenu(title: "Open Recent")
@@ -945,6 +962,9 @@ final class EditorAppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate
         file.addItem(reopenEncoded)
         file.addItem(.separator())
         item(file, "Close Tab", #selector(closeTab), "w")
+        let closeWindow = NSMenuItem(title: "Close Window", action: #selector(NSWindow.performClose(_:)), keyEquivalent: "W")
+        closeWindow.keyEquivalentModifierMask = [.command, .shift]
+        file.addItem(closeWindow)
         item(file, "Reopen Closed File", #selector(reopenClosedFile), "t", [.command, .shift])
         file.addItem(.separator())
         item(file, "Copy File Path", #selector(copyFilePath))
@@ -987,9 +1007,9 @@ final class EditorAppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate
         item(fontMenu, "Larger", #selector(increaseFontSize), "+")
         item(fontMenu, "Smaller", #selector(decreaseFontSize), "-")
         item(fontMenu, "Reset", #selector(resetFontSize))
-        for (title, keyPath) in [("Syntax", \EditorAppDelegate.mainSyntaxMenu),
-                                 ("Indentation", \EditorAppDelegate.mainIndentationMenu),
-                                 ("Line Endings", \EditorAppDelegate.mainLineEndingMenu)] {
+        for (title, keyPath) in [("Syntax", \EditorWorkspace.mainSyntaxMenu),
+                                 ("Indentation", \EditorWorkspace.mainIndentationMenu),
+                                 ("Line Endings", \EditorWorkspace.mainLineEndingMenu)] {
             let submenu = NSMenu(title: title)
             let item = NSMenuItem(title: title, action: nil, keyEquivalent: "")
             item.submenu = submenu
@@ -1026,7 +1046,12 @@ final class EditorAppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate
         let windowMenu = menu("Window")
         let minimize = NSMenuItem(title: "Minimize", action: #selector(NSWindow.performMiniaturize(_:)), keyEquivalent: "m")
         windowMenu.addItem(minimize)
-        NSApp.windowsMenu = windowMenu
+        item(windowMenu, "Merge All Windows", #selector(mergeWindows))
+        windowMenu.addItem(NSMenuItem(title: "Move Window Tab to New Window", action: #selector(NSWindow.moveTabToNewWindow(_:)), keyEquivalent: ""))
+        windowMenu.addItem(NSMenuItem(title: "Show Next Window Tab", action: #selector(NSWindow.selectNextTab(_:)), keyEquivalent: ""))
+        windowMenu.addItem(NSMenuItem(title: "Show Previous Window Tab", action: #selector(NSWindow.selectPreviousTab(_:)), keyEquivalent: ""))
+        self.windowMenu = windowMenu
+        if window == nil || window.isKeyWindow { NSApp.mainMenu = main; NSApp.windowsMenu = windowMenu }
         statusMenuSignature = ""
     }
 
@@ -1037,6 +1062,8 @@ final class EditorAppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate
         window.minSize = NSSize(width: 760, height: 420)
         window.delegate = self
         window.isReleasedWhenClosed = false
+        window.tabbingIdentifier = "SourceEditor.Workspace"
+        window.tabbingMode = .automatic
         window.backgroundColor = EditorTheme.background
         window.titlebarAppearsTransparent = true
         window.center()
@@ -1419,10 +1446,9 @@ final class EditorAppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate
 
     private func finishPendingClose() {
         guard !isBuildRunning, !isPluginRunning else { return }
-        if pendingTermination { pendingTermination = false; NSApp.reply(toApplicationShouldTerminate: true) }
+        if pendingTermination { applicationOwner?.workspaceFinishedWork() }
         else if pendingWindowClose {
             pendingWindowClose = false
-            hasApprovedWindowClose = true
             window.close()
         }
     }
@@ -1446,8 +1472,13 @@ final class EditorAppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate
     }
 
     func applyConfiguration(_ configuration: EditorConfiguration) {
+        if let applicationOwner { applicationOwner.applyConfiguration(configuration, updateDocumentSettings: true) }
+        else { applyLocalConfiguration(configuration, updateDocumentSettings: true) }
+    }
+
+    func applyLocalConfiguration(_ configuration: EditorConfiguration, updateDocumentSettings: Bool) {
         self.configuration = configuration
-        for document in documents {
+        for document in documents where updateDocumentSettings {
             var settings = document.settings
             settings.tabSize = configuration.tabSize
             settings.translateTabsToSpaces = configuration.translateTabsToSpaces
@@ -1512,14 +1543,8 @@ final class EditorAppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate
     }
 
     private func applyPresentationConfiguration(_ config: EditorConfiguration) {
-        configuration = config
-        applyTheme(config.theme)
-        for pane in panes { pane.applyConfiguration(config) }
-        rebuildTabs()
-        outline.reloadData()
-        makeMenus()
-        applyKeyBindings(config.keyBindings)
-        updateStatus()
+        if let applicationOwner { applicationOwner.applyConfiguration(config, updateDocumentSettings: false) }
+        else { applyLocalConfiguration(config, updateDocumentSettings: false) }
     }
 
     private func setTheme(_ theme: String) {
@@ -1530,7 +1555,7 @@ final class EditorAppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate
 
     private func applyKeyBindings(_ bindings: [String: EditorKeyBinding]) {
         let selectors: [String: Selector] = [
-            "new_file": #selector(newFile), "open": #selector(openFile), "save": #selector(saveFile),
+            "new_file": #selector(newFile), "new_window": #selector(newWindow), "open": #selector(openFile), "save": #selector(saveFile),
             "save_all": #selector(saveAll), "revert": #selector(revertFile), "reopen_closed_file": #selector(reopenClosedFile),
             "close": #selector(closeTab), "find": #selector(showFind), "quick_open": #selector(quickOpen),
             "command_palette": #selector(showCommands), "split": #selector(toggleSplit),
@@ -1541,7 +1566,7 @@ final class EditorAppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate
         func allItems(_ menu: NSMenu) -> [NSMenuItem] {
             menu.items.flatMap { [$0] + ($0.submenu.map(allItems) ?? []) }
         }
-        guard let menu = NSApp.mainMenu else { return }
+        guard let menu = mainMenu else { return }
         let items = allItems(menu)
         for (command, binding) in bindings {
             guard let selector = selectors[command], let item = items.first(where: { $0.action == selector }) else { continue }
@@ -1550,7 +1575,7 @@ final class EditorAppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate
             for other in items where other !== item && other.keyEquivalent.lowercased() == key && other.keyEquivalentModifierMask == modifiers {
                 other.keyEquivalent = ""
             }
-            item.keyEquivalent = key
+            item.keyEquivalent = modifiers.contains(.shift) ? key.uppercased() : key
             item.keyEquivalentModifierMask = modifiers
         }
     }
@@ -1900,7 +1925,7 @@ final class EditorAppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate
         changeDocumentSettings { $0.translateTabsToSpaces = toSpaces }
     }
 
-    private func setProject(_ url: URL) {
+    func setProject(_ url: URL) {
         if projectDocument?.folderURL != url { projectDocument = nil }
         projectRoot = ProjectItem(url)
         projectLabel.stringValue = url.lastPathComponent.uppercased()
@@ -2762,6 +2787,7 @@ final class EditorAppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate
     func executeCommand(_ name: String) -> Bool {
         switch name {
         case "new_file": newFile()
+        case "new_window": newWindow()
         case "save": saveFile()
         case "save_all": saveAll()
         case "revert": revertFile()
@@ -2806,6 +2832,7 @@ final class EditorAppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate
          "text": currentDocument?.storage.string ?? "", "modified": currentDocument?.isModified ?? false,
          "selectionCount": currentTextView?.selectedRanges.count ?? 0,
          "projectFiles": projectFiles.count, "status": status.location.stringValue,
+         "projectRoot": projectRoot?.url.path ?? "",
          "encoding": status.encoding.title, "lineEnding": status.lineEnding.title,
          "indentation": status.indentation.title, "syntax": status.syntax.title,
          "menuActionCount": menuActionCount,

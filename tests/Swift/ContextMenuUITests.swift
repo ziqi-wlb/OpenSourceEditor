@@ -1,7 +1,7 @@
 import AppKit
 
 enum ContextMenuUITests {
-    @MainActor static func run(delegate: EditorAppDelegate, directory: URL) async -> (passed: Int, failed: Int) {
+    @MainActor static func run(delegate: EditorWorkspace, directory: URL) async -> (passed: Int, failed: Int) {
         var passed = 0, failed = 0
         func check(_ name: String, _ value: Bool) {
             if value { passed += 1; print("PASS \(name)") }

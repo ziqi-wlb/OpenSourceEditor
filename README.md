@@ -29,6 +29,14 @@ The application is currently unsigned and unnotarized. For a downloaded build, u
 '.build/Source Editor.app/Contents/MacOS/source-editor' --version
 ```
 
+## Multiple windows on macOS
+
+**File → New Window** (`⌘⇧N`) creates a workspace inside the running application. New windows fold into native window tabs by default, with one Dock application icon. Each workspace keeps its own documents, project, selections and undo history. The menu bar follows the selected workspace; theme and font preferences apply across windows.
+
+Use **Window → Move Window Tab to New Window** to detach a workspace, and **Window → Merge All Windows** to fold them together again. Detached windows still share the same Dock icon. **File → Close Window** (`⌘⇧W`) closes a workspace after checking unsaved files; **Close Tab** (`⌘W`) closes a file. Quit checks unsaved documents in every workspace and waits for build/plugin cancellation. Closing the last window keeps the application running; clicking its Dock icon opens a new workspace.
+
+Finder, normal `open`, and direct CLI relaunches reuse the running application. Files already open in another workspace select that workspace. Avoid `open -n`, which requests a separate application instance. Windows from older versions or applications with a different bundle identity must be saved and quit normally before their old Dock icons disappear.
+
 ## Features and implementation
 
 Swift and AppKit provide native windows, text layout, tabs, project trees, shared-document split views, find/replace and regex search, multiple selections, undo/redo, file lifecycle and session restore. Status controls change encoding/BOM, line endings, syntax and tabs/spaces. Dark/light themes, configurable fonts, and native context menus on file tabs, text and project rows are included. Saving checks external disk changes and uses atomic replacement. Explicitly chosen build commands and a one-shot Python SDK support extensions; see [plugins](plugins.md) and [configuration examples](Resources/examples).
