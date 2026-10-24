@@ -1,0 +1,1075 @@
+{
+  "format_version": 1,
+  "target_build": "4200",
+  "offset_encoding": "UTF16 for reconstruction; ASCII fixtures intentionally avoid proving native Point equivalence",
+  "target_code_executed": false,
+  "vector_semantics": "expected is an independent specification; static-derived means source reasoning, proposed-reconstruction means a chosen behavior rather than a verified target result",
+  "vectors": [
+    {
+      "id": "V-sort-stable",
+      "contract_id": "C04",
+      "scope": "line-list",
+      "provenance": "static-derived",
+      "target_executed": false,
+      "input": {
+        "lines": [
+          "b",
+          "A",
+          "a"
+        ],
+        "command": "sort_lines",
+        "args": {}
+      },
+      "expected": {
+        "lines": [
+          "A",
+          "a",
+          "b"
+        ]
+      },
+      "source_ids": [
+        "S-sort"
+      ],
+      "limitations": [
+        "由 Python lower/sort/reverse/精确判重推导；未执行出厂函数。"
+      ]
+    },
+    {
+      "id": "V-sort-sensitive",
+      "contract_id": "C04",
+      "scope": "line-list",
+      "provenance": "static-derived",
+      "target_executed": false,
+      "input": {
+        "lines": [
+          "b",
+          "a",
+          "A"
+        ],
+        "command": "sort_lines",
+        "args": {
+          "case_sensitive": true
+        }
+      },
+      "expected": {
+        "lines": [
+          "A",
+          "a",
+          "b"
+        ]
+      },
+      "source_ids": [
+        "S-sort"
+      ],
+      "limitations": [
+        "由 Python lower/sort/reverse/精确判重推导；未执行出厂函数。"
+      ]
+    },
+    {
+      "id": "V-sort-lower-not-casefold",
+      "contract_id": "C04",
+      "scope": "line-list",
+      "provenance": "static-derived",
+      "target_executed": false,
+      "input": {
+        "lines": [
+          "SS",
+          "ß",
+          "ss"
+        ],
+        "command": "sort_lines",
+        "args": {}
+      },
+      "expected": {
+        "lines": [
+          "SS",
+          "ss",
+          "ß"
+        ]
+      },
+      "source_ids": [
+        "S-sort"
+      ],
+      "limitations": [
+        "由 Python lower/sort/reverse/精确判重推导；未执行出厂函数。"
+      ]
+    },
+    {
+      "id": "V-sort-reverse",
+      "contract_id": "C06",
+      "scope": "line-list",
+      "provenance": "static-derived",
+      "target_executed": false,
+      "input": {
+        "lines": [
+          "b",
+          "A",
+          "a"
+        ],
+        "command": "sort_lines",
+        "args": {
+          "reverse": true
+        }
+      },
+      "expected": {
+        "lines": [
+          "b",
+          "a",
+          "A"
+        ]
+      },
+      "source_ids": [
+        "S-sort"
+      ],
+      "limitations": [
+        "由 Python lower/sort/reverse/精确判重推导；未执行出厂函数。"
+      ]
+    },
+    {
+      "id": "V-sort-dedup",
+      "contract_id": "C06",
+      "scope": "line-list",
+      "provenance": "static-derived",
+      "target_executed": false,
+      "input": {
+        "lines": [
+          "b",
+          "A",
+          "a",
+          "A",
+          "b"
+        ],
+        "command": "sort_lines",
+        "args": {
+          "remove_duplicates": true
+        }
+      },
+      "expected": {
+        "lines": [
+          "A",
+          "a",
+          "b"
+        ]
+      },
+      "source_ids": [
+        "S-sort"
+      ],
+      "limitations": [
+        "由 Python lower/sort/reverse/精确判重推导；未执行出厂函数。"
+      ]
+    },
+    {
+      "id": "V-sort-all-options",
+      "contract_id": "C06",
+      "scope": "line-list",
+      "provenance": "static-derived",
+      "target_executed": false,
+      "input": {
+        "lines": [
+          "b",
+          "A",
+          "a",
+          "A",
+          "b"
+        ],
+        "command": "sort_lines",
+        "args": {
+          "reverse": true,
+          "remove_duplicates": true
+        }
+      },
+      "expected": {
+        "lines": [
+          "b",
+          "A",
+          "a"
+        ]
+      },
+      "source_ids": [
+        "S-sort"
+      ],
+      "limitations": [
+        "由 Python lower/sort/reverse/精确判重推导；未执行出厂函数。"
+      ]
+    },
+    {
+      "id": "V-sort-line-range-proposal",
+      "contract_id": "C05",
+      "scope": "buffer-command",
+      "provenance": "static-derived-with-native-boundary",
+      "target_executed": false,
+      "input": {
+        "text": "keep\nbbb\nAAA\naaa\nend\n",
+        "selections": [
+          [
+            6,
+            15
+          ]
+        ],
+        "command": "sort_lines",
+        "args": {}
+      },
+      "expected": {
+        "text": "keep\nAAA\naaa\nbbb\nend\n"
+      },
+      "source_ids": [
+        "S-sort",
+        "S-api"
+      ],
+      "limitations": [
+        "仅 ASCII/LF，offset 同时为 ASCII codepoint 与 UTF16。",
+        "结果依赖 v.line 的文档语义以及原生 Selection 对扩展区域的合并；不是原程序运行记录。",
+        "expected 不断言最终选区/native undo grouping。"
+      ]
+    },
+    {
+      "id": "V-sort-whole-buffer-proposal",
+      "contract_id": "C05",
+      "scope": "buffer-command",
+      "provenance": "static-derived-with-native-boundary",
+      "target_executed": false,
+      "input": {
+        "text": "b\nA\na\n",
+        "selections": [
+          [
+            0,
+            0
+          ]
+        ],
+        "command": "sort_lines",
+        "args": {}
+      },
+      "expected": {
+        "text": "A\na\nb\n"
+      },
+      "source_ids": [
+        "S-sort",
+        "S-api"
+      ],
+      "limitations": [
+        "仅 ASCII/LF，offset 同时为 ASCII codepoint 与 UTF16。",
+        "结果依赖 v.line 的文档语义以及原生 Selection 对扩展区域的合并；不是原程序运行记录。",
+        "expected 不断言最终选区/native undo grouping。"
+      ]
+    },
+    {
+      "id": "V-sort-boundary-whitespace",
+      "contract_id": "C05",
+      "scope": "buffer-command",
+      "provenance": "static-derived-with-native-boundary",
+      "target_executed": false,
+      "input": {
+        "text": "\n \nb\nA\n\n \n",
+        "selections": [
+          [
+            0,
+            0
+          ]
+        ],
+        "command": "sort_lines",
+        "args": {}
+      },
+      "expected": {
+        "text": "\n \nA\nb\n\n \n"
+      },
+      "source_ids": [
+        "S-sort",
+        "S-api"
+      ],
+      "limitations": [
+        "仅 ASCII/LF，offset 同时为 ASCII codepoint 与 UTF16。",
+        "结果依赖 v.line 的文档语义以及原生 Selection 对扩展区域的合并；不是原程序运行记录。",
+        "expected 不断言最终选区/native undo grouping。"
+      ]
+    },
+    {
+      "id": "V-sort-preserve-trailing-lf",
+      "contract_id": "C05",
+      "scope": "buffer-command",
+      "provenance": "static-derived-with-native-boundary",
+      "target_executed": false,
+      "input": {
+        "text": "b\nA\n",
+        "selections": [
+          [
+            0,
+            4
+          ]
+        ],
+        "command": "sort_lines",
+        "args": {}
+      },
+      "expected": {
+        "text": "A\nb\n"
+      },
+      "source_ids": [
+        "S-sort",
+        "S-api"
+      ],
+      "limitations": [
+        "仅 ASCII/LF，offset 同时为 ASCII codepoint 与 UTF16。",
+        "结果依赖 v.line 的文档语义以及原生 Selection 对扩展区域的合并；不是原程序运行记录。",
+        "expected 不断言最终选区/native undo grouping。"
+      ]
+    },
+    {
+      "id": "V-sort-no-final-lf",
+      "contract_id": "C05",
+      "scope": "buffer-command",
+      "provenance": "static-derived-with-native-boundary",
+      "target_executed": false,
+      "input": {
+        "text": "b\nA",
+        "selections": [
+          [
+            0,
+            0
+          ]
+        ],
+        "command": "sort_lines",
+        "args": {}
+      },
+      "expected": {
+        "text": "A\nb"
+      },
+      "source_ids": [
+        "S-sort",
+        "S-api"
+      ],
+      "limitations": [
+        "仅 ASCII/LF，offset 同时为 ASCII codepoint 与 UTF16。",
+        "结果依赖 v.line 的文档语义以及原生 Selection 对扩展区域的合并；不是原程序运行记录。",
+        "expected 不断言最终选区/native undo grouping。"
+      ]
+    },
+    {
+      "id": "V-sort-internal-empty-line",
+      "contract_id": "C05",
+      "scope": "buffer-command",
+      "provenance": "static-derived-with-native-boundary",
+      "target_executed": false,
+      "input": {
+        "text": "\nb\n\nA\n \n",
+        "selections": [
+          [
+            0,
+            0
+          ]
+        ],
+        "command": "sort_lines",
+        "args": {}
+      },
+      "expected": {
+        "text": "\n\nA\nb\n \n"
+      },
+      "source_ids": [
+        "S-sort",
+        "S-api"
+      ],
+      "limitations": [
+        "仅 ASCII/LF，offset 同时为 ASCII codepoint 与 UTF16。",
+        "结果依赖 v.line 的文档语义以及原生 Selection 对扩展区域的合并；不是原程序运行记录。",
+        "expected 不断言最终选区/native undo grouping。"
+      ]
+    },
+    {
+      "id": "V-sort-disjoint-regions",
+      "contract_id": "C05",
+      "scope": "buffer-command",
+      "provenance": "static-derived-with-native-boundary",
+      "target_executed": false,
+      "input": {
+        "text": "b\nA\n---\nz\nC\n",
+        "selections": [
+          [
+            0,
+            3
+          ],
+          [
+            8,
+            11
+          ]
+        ],
+        "command": "sort_lines",
+        "args": {}
+      },
+      "expected": {
+        "text": "A\nb\n---\nC\nz\n"
+      },
+      "source_ids": [
+        "S-sort",
+        "S-api"
+      ],
+      "limitations": [
+        "仅 ASCII/LF，offset 同时为 ASCII codepoint 与 UTF16。",
+        "结果依赖 v.line 的文档语义以及原生 Selection 对扩展区域的合并；不是原程序运行记录。",
+        "expected 不断言最终选区/native undo grouping。"
+      ]
+    },
+    {
+      "id": "V-sort-preserve-line-spaces",
+      "contract_id": "C05",
+      "scope": "buffer-command",
+      "provenance": "static-derived-with-native-boundary",
+      "target_executed": false,
+      "input": {
+        "text": "\nb  \nA \n\n",
+        "selections": [
+          [
+            0,
+            0
+          ]
+        ],
+        "command": "sort_lines",
+        "args": {}
+      },
+      "expected": {
+        "text": "\nA \nb  \n\n"
+      },
+      "source_ids": [
+        "S-sort",
+        "S-api"
+      ],
+      "limitations": [
+        "仅 ASCII/LF，offset 同时为 ASCII codepoint 与 UTF16。",
+        "结果依赖 v.line 的文档语义以及原生 Selection 对扩展区域的合并；不是原程序运行记录。",
+        "expected 不断言最终选区/native undo grouping。"
+      ]
+    },
+    {
+      "id": "V-case-upper",
+      "contract_id": "C07",
+      "scope": "string-transform",
+      "provenance": "static-derived",
+      "target_executed": false,
+      "input": {
+        "text": "MiXeD",
+        "command": "upper_case",
+        "args": {}
+      },
+      "expected": {
+        "text": "MIXED"
+      },
+      "source_ids": [
+        "S-transform"
+      ],
+      "limitations": [
+        "只测 Python 字符串映射推导；不推导 native 选区位移。",
+        "Unicode 宿主版本差异仍需核验。"
+      ]
+    },
+    {
+      "id": "V-case-lower",
+      "contract_id": "C07",
+      "scope": "string-transform",
+      "provenance": "static-derived",
+      "target_executed": false,
+      "input": {
+        "text": "MiXeD",
+        "command": "lower_case",
+        "args": {}
+      },
+      "expected": {
+        "text": "mixed"
+      },
+      "source_ids": [
+        "S-transform"
+      ],
+      "limitations": [
+        "只测 Python 字符串映射推导；不推导 native 选区位移。",
+        "Unicode 宿主版本差异仍需核验。"
+      ]
+    },
+    {
+      "id": "V-case-swap",
+      "contract_id": "C07",
+      "scope": "string-transform",
+      "provenance": "static-derived",
+      "target_executed": false,
+      "input": {
+        "text": "AbC 12",
+        "command": "swap_case",
+        "args": {}
+      },
+      "expected": {
+        "text": "aBc 12"
+      },
+      "source_ids": [
+        "S-transform"
+      ],
+      "limitations": [
+        "只测 Python 字符串映射推导；不推导 native 选区位移。",
+        "Unicode 宿主版本差异仍需核验。"
+      ]
+    },
+    {
+      "id": "V-case-title",
+      "contract_id": "C07",
+      "scope": "string-transform",
+      "provenance": "static-derived",
+      "target_executed": false,
+      "input": {
+        "text": "they're bill's",
+        "command": "title_case",
+        "args": {}
+      },
+      "expected": {
+        "text": "They'Re Bill'S"
+      },
+      "source_ids": [
+        "S-transform"
+      ],
+      "limitations": [
+        "只测 Python 字符串映射推导；不推导 native 选区位移。",
+        "Unicode 宿主版本差异仍需核验。"
+      ]
+    },
+    {
+      "id": "V-case-unicode-upper",
+      "contract_id": "C07",
+      "scope": "string-transform",
+      "provenance": "static-derived",
+      "target_executed": false,
+      "input": {
+        "text": "Straße",
+        "command": "upper_case",
+        "args": {}
+      },
+      "expected": {
+        "text": "STRASSE"
+      },
+      "source_ids": [
+        "S-transform"
+      ],
+      "limitations": [
+        "只测 Python 字符串映射推导；不推导 native 选区位移。",
+        "Unicode 宿主版本差异仍需核验。"
+      ]
+    },
+    {
+      "id": "V-name-normal",
+      "contract_id": "C09",
+      "scope": "command-name",
+      "provenance": "static-derived",
+      "target_executed": false,
+      "input": {
+        "class_name": "SortLinesCommand"
+      },
+      "expected": {
+        "command_name": "sort_lines"
+      },
+      "source_ids": [
+        "S-plugin"
+      ],
+      "limitations": []
+    },
+    {
+      "id": "V-name-acronym",
+      "contract_id": "C09",
+      "scope": "command-name",
+      "provenance": "static-derived",
+      "target_executed": false,
+      "input": {
+        "class_name": "HTTPServerCommand"
+      },
+      "expected": {
+        "command_name": "h_tTPServer"
+      },
+      "source_ids": [
+        "S-plugin"
+      ],
+      "limitations": []
+    },
+    {
+      "id": "V-edit-replace",
+      "contract_id": "C01",
+      "scope": "buffer-command",
+      "provenance": "proposed-reconstruction",
+      "target_executed": false,
+      "input": {
+        "text": "abc\ndef",
+        "selections": [
+          [
+            1,
+            2
+          ]
+        ],
+        "command": "insert",
+        "args": {
+          "characters": "X"
+        }
+      },
+      "expected": {
+        "text": "aXc\ndef",
+        "selections": [
+          [
+            2,
+            2
+          ]
+        ]
+      },
+      "source_ids": [
+        "S-api"
+      ],
+      "limitations": [
+        "选区结束位置为重建设计，native未验证。"
+      ]
+    },
+    {
+      "id": "V-edit-multicursor",
+      "contract_id": "C03",
+      "scope": "buffer-command",
+      "provenance": "proposed-reconstruction",
+      "target_executed": false,
+      "input": {
+        "text": "cat cat",
+        "selections": [
+          [
+            0,
+            3
+          ],
+          [
+            4,
+            7
+          ]
+        ],
+        "command": "insert",
+        "args": {
+          "characters": "dog!"
+        }
+      },
+      "expected": {
+        "text": "dog! dog!",
+        "selections": [
+          [
+            4,
+            4
+          ],
+          [
+            9,
+            9
+          ]
+        ]
+      },
+      "source_ids": [
+        "S-api"
+      ],
+      "limitations": [
+        "从后往前替换与光标放到插入末尾为重建设计。"
+      ]
+    },
+    {
+      "id": "V-history-roundtrip",
+      "contract_id": "C02",
+      "scope": "command-sequence",
+      "provenance": "proposed-reconstruction",
+      "target_executed": false,
+      "input": {
+        "text": "abc",
+        "selections": [
+          [
+            1,
+            2
+          ]
+        ],
+        "commands": [
+          {
+            "command": "insert",
+            "args": {
+              "characters": "X"
+            }
+          },
+          {
+            "command": "undo"
+          },
+          {
+            "command": "redo"
+          }
+        ]
+      },
+      "expected": {
+        "text": "aXc",
+        "states": [
+          "aXc",
+          "abc",
+          "aXc"
+        ]
+      },
+      "source_ids": [
+        "S-keymap",
+        "S-api"
+      ],
+      "limitations": [
+        "重建命令快照规则；native键入合并未知。"
+      ]
+    },
+    {
+      "id": "V-history-branch",
+      "contract_id": "C02",
+      "scope": "command-sequence",
+      "provenance": "proposed-reconstruction",
+      "target_executed": false,
+      "input": {
+        "text": "abc",
+        "selections": [
+          [
+            1,
+            2
+          ]
+        ],
+        "commands": [
+          {
+            "command": "insert",
+            "args": {
+              "characters": "X"
+            }
+          },
+          {
+            "command": "undo"
+          },
+          {
+            "command": "insert",
+            "args": {
+              "characters": "Y"
+            }
+          },
+          {
+            "command": "redo"
+          }
+        ]
+      },
+      "expected": {
+        "text": "aYc",
+        "redo_available": false
+      },
+      "source_ids": [
+        "S-keymap",
+        "S-api"
+      ],
+      "limitations": [
+        "重建规定undo后新编辑清空redo。"
+      ]
+    },
+    {
+      "id": "V-edit-lifecycle",
+      "contract_id": "C08",
+      "scope": "instrumented-command-host",
+      "provenance": "static-derived",
+      "target_executed": false,
+      "input": {
+        "command_run": "throws after begin_edit"
+      },
+      "expected": {
+        "call_order": [
+          "begin_edit",
+          "run",
+          "end_edit"
+        ],
+        "error_propagated": true
+      },
+      "source_ids": [
+        "S-plugin",
+        "S-api"
+      ],
+      "limitations": [
+        "仅异常不是可接受输入缺参 TypeError 时。",
+        "native end_edit失败情况不作成功清理承诺。"
+      ]
+    },
+    {
+      "id": "V-command-unknown-proposal",
+      "contract_id": "C09",
+      "scope": "buffer-command",
+      "provenance": "proposed-reconstruction",
+      "target_executed": false,
+      "input": {
+        "text": "abc",
+        "selections": [
+          [
+            0,
+            0
+          ]
+        ],
+        "command": "unimplemented_command",
+        "args": {}
+      },
+      "expected": {
+        "text": "abc",
+        "error": "unsupported_command"
+      },
+      "source_ids": [
+        "S-api"
+      ],
+      "limitations": [
+        "错误格式由重建程序定义；native未验证。"
+      ]
+    },
+    {
+      "id": "V-key-bindings",
+      "contract_id": "C10",
+      "scope": "resource-declarations",
+      "provenance": "resource-observation",
+      "target_executed": false,
+      "input": {
+        "resource": "Default (OSX).sublime-keymap",
+        "indices": [
+          18,
+          19,
+          100,
+          160,
+          161,
+          255,
+          256
+        ]
+      },
+      "expected": {
+        "declarations": [
+          {
+            "keys": [
+              "super+z"
+            ],
+            "command": "undo"
+          },
+          {
+            "keys": [
+              "super+shift+z"
+            ],
+            "command": "redo"
+          },
+          {
+            "keys": [
+              "super+shift+p"
+            ],
+            "command": "show_overlay",
+            "args": {
+              "overlay": "command_palette"
+            }
+          },
+          {
+            "keys": [
+              "f5"
+            ],
+            "command": "sort_lines",
+            "args": {
+              "case_sensitive": false
+            }
+          },
+          {
+            "keys": [
+              "ctrl+f5"
+            ],
+            "command": "sort_lines",
+            "args": {
+              "case_sensitive": true
+            }
+          },
+          {
+            "keys": [
+              "super+k",
+              "super+u"
+            ],
+            "command": "upper_case"
+          },
+          {
+            "keys": [
+              "super+k",
+              "super+l"
+            ],
+            "command": "lower_case"
+          }
+        ]
+      },
+      "source_ids": [
+        "S-keymap"
+      ],
+      "limitations": [
+        "0-based JSON item indices；不是当前用户运行绑定。"
+      ]
+    },
+    {
+      "id": "V-search-literal-proposal",
+      "contract_id": "C11",
+      "scope": "search-query",
+      "provenance": "proposed-reconstruction",
+      "target_executed": false,
+      "input": {
+        "text": "banana banana",
+        "pattern": "ana",
+        "flags": [
+          "LITERAL"
+        ]
+      },
+      "expected": {
+        "regions": [
+          [
+            1,
+            4
+          ],
+          [
+            8,
+            11
+          ]
+        ]
+      },
+      "source_ids": [
+        "S-api"
+      ],
+      "limitations": [
+        "选择非重叠 literal搜索；native查找未运行。"
+      ]
+    },
+    {
+      "id": "V-search-replace-proposal",
+      "contract_id": "C11",
+      "scope": "search-replace",
+      "provenance": "proposed-reconstruction",
+      "target_executed": false,
+      "input": {
+        "text": "banana banana",
+        "pattern": "ana",
+        "replacement": "X",
+        "flags": [
+          "LITERAL"
+        ]
+      },
+      "expected": {
+        "text": "bXna bXna"
+      },
+      "source_ids": [
+        "S-api"
+      ],
+      "limitations": [
+        "以非重叠匹配进行replace-all为重建规则。"
+      ]
+    },
+    {
+      "id": "V-file-roundtrip-proposal",
+      "contract_id": "C12",
+      "scope": "file-roundtrip",
+      "provenance": "proposed-reconstruction",
+      "target_executed": false,
+      "input": {
+        "encoding": "UTF-8",
+        "text": "你好\nSublime\n",
+        "edited_text": "你好\nIndependent\n"
+      },
+      "expected": {
+        "reopened_text": "你好\nIndependent\n",
+        "utf8_hex": "e4bda0e5a5bd0a496e646570656e64656e740a"
+      },
+      "source_ids": [
+        "S-api",
+        "S-keymap"
+      ],
+      "limitations": [
+        "写入只允许自有验收目录；不会修改应用或用户现有文件。"
+      ]
+    },
+    {
+      "id": "V-project-roundtrip-proposal",
+      "contract_id": "C13",
+      "scope": "project-roundtrip",
+      "provenance": "proposed-reconstruction",
+      "target_executed": false,
+      "input": {
+        "project": {
+          "folders": [
+            {
+              "path": "./src"
+            }
+          ],
+          "custom_field": {
+            "keep": true
+          }
+        }
+      },
+      "expected": {
+        "project": {
+          "folders": [
+            {
+              "path": "./src"
+            }
+          ],
+          "custom_field": {
+            "keep": true
+          }
+        }
+      },
+      "source_ids": [
+        "S-api"
+      ],
+      "limitations": [
+        "folders 是重建最小项目约定；保留未知字段不等于完整Sublime格式兼容。"
+      ]
+    },
+    {
+      "id": "V-build-declaration",
+      "contract_id": "C14",
+      "scope": "resource-declarations",
+      "provenance": "resource-observation",
+      "target_executed": false,
+      "input": {
+        "resource": "Default (OSX).sublime-keymap",
+        "indices": [
+          155,
+          156,
+          157
+        ]
+      },
+      "expected": {
+        "declarations": [
+          {
+            "keys": [
+              "f7"
+            ],
+            "command": "build"
+          },
+          {
+            "keys": [
+              "super+b"
+            ],
+            "command": "build"
+          },
+          {
+            "keys": [
+              "super+shift+b"
+            ],
+            "command": "build",
+            "args": {
+              "select": true
+            }
+          }
+        ]
+      },
+      "source_ids": [
+        "S-keymap"
+      ],
+      "limitations": [
+        "出厂keymap声明；后续原生静态已证明默认target=exec且可覆盖，但此vector仍不是实际构建执行记录。"
+      ]
+    },
+    {
+      "id": "V-loader-override",
+      "contract_id": "C15",
+      "scope": "loader-resolution-decision",
+      "provenance": "static-derived",
+      "target_executed": false,
+      "input": {
+        "fullname": "Default.sort",
+        "recognized_package": true,
+        "override_py_exists": true,
+        "zip_module_exists": true
+      },
+      "expected": {
+        "selected_origin": "override .py",
+        "is_package": false
+      },
+      "source_ids": [
+        "S-plugin"
+      ],
+      "limitations": [
+        "仅_spec_info可适用路径的静态控制流；未读取/执行用户override。"
+      ]
+    }
+  ]
+}

@@ -1,0 +1,4 @@
+{
+  "argv": ["/usr/bin/python3", "${file}"],
+  "timeoutSeconds": 300
+}

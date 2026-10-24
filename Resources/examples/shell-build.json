@@ -1,0 +1,4 @@
+{
+  "shellCommand": "printf 'Project: %s\\nFile: %s\\n' \"$SOURCE_EDITOR_PROJECT\" \"$SOURCE_EDITOR_FILE\"",
+  "timeoutSeconds": 30
+}

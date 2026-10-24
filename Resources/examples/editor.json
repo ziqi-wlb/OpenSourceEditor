@@ -1,0 +1,20 @@
+{
+  "font_face": "Menlo",
+  "font_size": 12,
+  "default_font_size": 12,
+  "tab_size": 4,
+  "translate_tabs_to_spaces": false,
+  "detect_indentation": true,
+  "use_tab_stops": true,
+  "auto_indent": true,
+  "smart_indent": true,
+  "shift_tab_unindent": false,
+  "word_wrap": "auto",
+  "theme": "dark",
+  "keyBindings": {
+    "command_palette": "cmd+shift+p",
+    "quick_open": "cmd+p",
+    "build": "cmd+b",
+    "split": "cmd+alt+2"
+  }
+}
