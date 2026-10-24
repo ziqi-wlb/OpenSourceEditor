@@ -7,6 +7,8 @@ An independently implemented macOS text editor. Build and run this directory on 
 Requires macOS 13 or later and Xcode Command Line Tools (`xcode-select --install`). Python 3 is optional for extensions. From this directory:
 
 ```sh
+bash scripts/install_macos.sh universal  # Build, install in ~/Applications, register and launch
+# Or build without installing:
 bash build.sh --arch universal  # Intel x86_64 + Apple Silicon arm64
 open '.build/Source Editor.app'
 # Alternatively: --arch arm64 or --arch x86_64
@@ -22,6 +24,8 @@ open "$HOME/Applications/Source Editor.app"
 ```
 
 The application is currently unsigned and unnotarized. For a downloaded build, use Finder's **Open** action and the macOS approval dialog if needed. Packaging does not change security settings or the default editor.
+
+The installer preserves an existing Source Editor installation under ignored `.build/install-backups/` and asks you to save and quit any running copy before updating. It registers the installed application with macOS Launch Services. Markdown (`.md`, `.markdown`, `.mdown`, `.mkd`) and text files can then choose **Source Editor** in Finder's **Open With** menu. The installer does not select a default application. If an already-open Finder menu is stale, close it and reopen it; **Open With → Other…** can also select the installed application.
 
 ```sh
 '.build/Source Editor.app/Contents/MacOS/source-editor' --project . README.md
@@ -41,7 +45,7 @@ Finder, normal `open`, and direct CLI relaunches reuse the running application. 
 
 Swift and AppKit provide native windows, text layout, tabs, project trees, shared-document split views, find/replace and regex search, multiple selections, undo/redo, file lifecycle and session restore. Status controls change encoding/BOM, line endings, syntax and tabs/spaces. Dark/light themes, configurable fonts, and native context menus on file tabs, text and project rows are included. Saving checks external disk changes and uses atomic replacement. Explicitly chosen build commands and a one-shot Python SDK support extensions; see [plugins](plugins.md) and [configuration examples](Resources/examples).
 
-The release builds only `Sources/*.swift` and whitelisted Python/JSON resources. Tests, benchmarks, snapshots and test menu diagnostics compile only with `bash build.sh --tests`, into a separate **Source Editor Tests.app**. Generated icons come from the original Swift drawing source. No third-party runtime frameworks are bundled.
+The release builds only `Sources/*.swift` and whitelisted Python/JSON resources. Tests, benchmarks, snapshots and test menu diagnostics compile only with `bash build.sh --tests`, into a separate **Source Editor Tests.app**, which declares no document associations. Generated icons come from the original Swift drawing source. No third-party runtime frameworks are bundled.
 
 TextKit lays out visible text on demand. Each document shares its line index and lexical matches across split panes; text edits invalidate these caches at the storage boundary. Only visible syntax matches are painted, and dirty file labels update without recreating every tab. See [performance measurements and remaining costs](PERFORMANCE.md).
 

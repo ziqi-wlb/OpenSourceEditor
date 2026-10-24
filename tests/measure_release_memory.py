@@ -68,6 +68,8 @@ def main():
         settings = plistlib.loads(info.read_bytes())
         identity = 'org.sourceeditor.memoryprobe.' + uuid.uuid4().hex
         settings['CFBundleIdentifier'] = identity
+        settings.pop('CFBundleDocumentTypes', None)
+        settings.pop('UTImportedTypeDeclarations', None)
         info.write_bytes(plistlib.dumps(settings))
         paths = []
         for index in range(8 if case == 'multiple' else 1 if case == 'file' else 0):

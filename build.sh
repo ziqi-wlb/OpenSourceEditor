@@ -45,6 +45,9 @@ fi
 cp Info.plist "$editor_bundle/Contents/Info.plist"
 if [ "$editor_testing" = true ]; then
     /usr/libexec/PlistBuddy -c 'Set :CFBundleIdentifier org.sourceeditor.SourceEditor.tests' "$editor_bundle/Contents/Info.plist"
+    # Test bundles must not become Finder Open With candidates.
+    /usr/libexec/PlistBuddy -c 'Delete :CFBundleDocumentTypes' "$editor_bundle/Contents/Info.plist"
+    /usr/libexec/PlistBuddy -c 'Delete :UTImportedTypeDeclarations' "$editor_bundle/Contents/Info.plist"
 fi
 # Rebuild this owned resource directory from supported source files only.
 rm -rf "$editor_bundle/Contents/Resources"
