@@ -2,6 +2,8 @@
 
 Source Editor is an independent editor. Familiar workflows from Sublime Text and VS Code guide interaction design; their code and assets are not part of the application. macOS and Windows have separate native implementations and separate validation status.
 
+For concrete daily development and note-taking gaps, implementation priorities and scenario acceptance, see [the daily-use analysis](daily-use-gap-analysis.md).
+
 ## Acceptance criteria
 
 A stable release requires recoverable file operations, Unicode/IME correctness, reliable undo, bounded background work, clear coverage when limits are reached, keyboard and accessibility support, portable builds, documented configuration, actual GUI regression tests and resource measurements. Feature presence alone is not industrial readiness.

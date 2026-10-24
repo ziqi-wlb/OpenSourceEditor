@@ -59,6 +59,8 @@ For 0.7.0, see [Markdown, search, recovery and resource measurements](docs/docum
 
 This is not a complete Sublime Text replacement. Grammar/snippet engines, full plugin compatibility, LSP, minimap, rectangular selection and project regex/replace remain incomplete. The Python SDK runs selected code with the current user's permissions; it is not a sandbox. Windows currently has a smaller feature set.
 
+For daily development and work notes, see [the detailed gap analysis and acceptance plan](docs/daily-use-gap-analysis.md).
+
 ## Tests and source package
 
 ```sh
