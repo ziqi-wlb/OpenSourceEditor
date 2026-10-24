@@ -1,5 +1,6 @@
 import AppKit
 import Darwin
+import WebKit
 
 /// Explicit native performance workload; excluded from release and normal tests.
 enum PerformanceTests {
@@ -74,14 +75,56 @@ enum PerformanceTests {
             try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
             let line = "let value = 12345 // Unicode 中文 😀 and a realistic source line\n"
             let body = String(repeating: line, count: max(1, bytes / line.utf8.count))
-            let source = scenario == "comment" ? "/*\n" + body + "*/\n" : body
-            let fixture = directory.appendingPathComponent("fixture.swift")
+            let markdownLine = "## Topic\n\nA **Markdown** paragraph with 中文 and 😀.\n\n| Feature | State |\n| --- | --- |\n| Preview | Ready |\n\n- [x] Task\n\n```swift\nlet value = 42\n```\n\n"
+            let source = scenario == "markdown" ? "# Performance Document\n\n" + String(repeating: markdownLine, count: max(1, bytes / markdownLine.utf8.count)) : scenario == "comment" ? "/*\n" + body + "*/\n" : body
+            let fixture = directory.appendingPathComponent(scenario == "markdown" ? "fixture.md" : "fixture.swift")
             try Data(source.utf8).write(to: fixture)
             let workspace = app.newWindow()
             workspace.window.setContentSize(NSSize(width: 1220, height: 810))
             await pump(0.3)
             snapshot("empty_window", extra: ["fixture_bytes": source.utf8.count])
-            if scenario == "file" || scenario == "comment" {
+            if scenario == "markdown" {
+                var closedDocuments: [WeakObject] = []
+                for cycle in 1...cycles {
+                    workspace.openDocument(fixture)
+                    let document = workspace.currentDocument!
+                    closedDocuments.append(WeakObject(document))
+                    let started = ProcessInfo.processInfo.systemUptime
+                    workspace.setMarkdownMode(.sideBySide)
+                    weak var closedPreview = workspace.markdownPreviewForTesting
+                    let deadline = Date().addingTimeInterval(20)
+                    while (workspace.markdownPreviewForTesting?.page == nil || workspace.markdownPreviewForTesting?.webView.isLoading == true), Date() < deadline { await pump(0.02) }
+                    check("Markdown render cycle \(cycle)", workspace.markdownPreviewForTesting?.page?.headings.first?.title == "Performance Document")
+                    snapshot("cycle_\(cycle)_rendered", extra: ["render_to_loaded_ms": (ProcessInfo.processInfo.systemUptime - started) * 1000])
+                    await pump(0.5)
+                    if let web = workspace.markdownPreviewForTesting?.webView {
+                        for step in 0..<10 {
+                            await withCheckedContinuation { (continuation: CheckedContinuation<Void, Never>) in
+                                web.evaluateJavaScript("window.scrollTo(0,Math.max(0,document.documentElement.scrollHeight-innerHeight)*\(Double(step) / 9))") { _, _ in continuation.resume() }
+                            }
+                            await pump(0.04)
+                        }
+                    }
+                    snapshot("cycle_\(cycle)_scrolled")
+                    document.setTextUndoably(source + "\n# Updated", actionName: "Performance fixture")
+                    let edited = ProcessInfo.processInfo.systemUptime
+                    let editDeadline = Date().addingTimeInterval(20)
+                    while workspace.markdownPreviewForTesting?.page?.headings.last?.title != "Updated", Date() < editDeadline { await pump(0.02) }
+                    check("Markdown edit refresh cycle \(cycle)", workspace.markdownPreviewForTesting?.page?.headings.last?.title == "Updated")
+                    snapshot("cycle_\(cycle)_updated", extra: ["edit_to_page_ms": (ProcessInfo.processInfo.systemUptime - edited) * 1000])
+                    document.checkpoint()
+                    _ = workspace.executeCommand("close_tab")
+                    await pump(0.4)
+                    check("Preview released cycle \(cycle)", closedPreview == nil)
+                    // The local constant retains the document until this iteration ends.
+                    check("Preview detached cycle \(cycle)", workspace.markdownPreviewForTesting == nil)
+                    snapshot("cycle_\(cycle)_closed", extra: ["closed_preview_alive": closedPreview == nil ? 0 : 1,
+                        "completed_cycles": cycle])
+                }
+                await pump(0.4)
+                check("All Markdown documents released", closedDocuments.allSatisfy { $0.value == nil })
+                snapshot("all_markdown_cycles_closed", extra: ["closed_documents_alive": closedDocuments.filter { $0.value != nil }.count])
+            } else if scenario == "file" || scenario == "comment" {
                 var document: EditorDocument?
                 measured("read_decode_storage") { document = try? EditorDocument.open(fixture) }
                 check("strict UTF-8 read", document?.storage.string == source)

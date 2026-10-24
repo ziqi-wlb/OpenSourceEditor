@@ -228,7 +228,7 @@ enum EditorSyntax: String, CaseIterable {
         case "pyw": return .python
         case "mjs", "cjs", "jsx": return .javascript
         case "tsx": return .typescript
-        case "markdown": return .markdown
+        case "markdown", "mdown", "mkd": return .markdown
         case "htm": return .html
         case "h", "cc", "cxx", "hpp": return .cpp
         case "bash", "zsh": return .shell
@@ -273,7 +273,7 @@ extension TextOperations {
     private static func error(_ text: String, _ selections: [NSRange], _ message: String) -> TextEditResult {
         TextEditResult(text: text, selections: selections, error: message)
     }
-    private static func valid(_ text: String, _ selections: [NSRange]) -> Bool {
+    static func valid(_ text: String, _ selections: [NSRange]) -> Bool {
         let units = Array(text.utf16)
         return selections.allSatisfy { r in r.location >= 0 && r.length >= 0 && r.location <= units.count
             && r.length <= units.count - r.location && isBoundary(r.location, in: units) && isBoundary(NSMaxRange(r), in: units) }
@@ -324,7 +324,7 @@ extension TextOperations {
         }
         return selectedStarts.sorted()
     }
-    private static func preserving(_ text: String, _ selections: [NSRange], _ edits: [TextReplacement]) -> TextEditResult {
+    static func preserving(_ text: String, _ selections: [NSRange], _ edits: [TextReplacement]) -> TextEditResult {
         let result = apply(in: text, edits: edits)
         guard result.error == nil else { return error(text, selections, result.error!) }
         let ordered = edits.sorted { $0.range.location < $1.range.location }

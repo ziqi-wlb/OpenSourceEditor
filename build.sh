@@ -31,7 +31,7 @@ esac
 editor_outputs=()
 for editor_cpu in "${editor_arches[@]}"; do
     editor_output=".build/source-editor-$editor_cpu"
-    xcrun swiftc "${editor_flags[@]}" -target "${editor_cpu}-apple-macosx13.0" "${editor_sources[@]}" -o "$editor_output" -framework AppKit -framework CryptoKit
+    xcrun swiftc "${editor_flags[@]}" -target "${editor_cpu}-apple-macosx13.0" "${editor_sources[@]}" -o "$editor_output" -framework AppKit -framework CryptoKit -framework WebKit -framework ImageIO
     editor_outputs+=("$editor_output")
 done
 # Replace the executable inode. Overwriting a running Mach-O can leave macOS

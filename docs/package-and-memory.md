@@ -1,5 +1,7 @@
 # Release package size and runtime memory
 
+Current 0.7.0 document-workspace measurements are in [the newer resource report](document-workspace-performance.md). The results below are the historical 0.6.1 baseline.
+
 Measured on 2026-10-24 for macOS Source Editor 0.6.1, on an Apple M1 Pro with 16 GiB RAM, macOS 14.2.1 and Swift 5.10. Units below are binary: 1 MiB = 1,048,576 bytes. These measurements cover the current independent editor, not the installed Sublime Text application.
 
 ## Package inventory

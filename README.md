@@ -45,13 +45,19 @@ Finder, normal `open`, and direct CLI relaunches reuse the running application. 
 
 Swift and AppKit provide native windows, text layout, tabs, project trees, shared-document split views, find/replace and regex search, multiple selections, undo/redo, file lifecycle and session restore. Status controls change encoding/BOM, line endings, syntax and tabs/spaces. Dark/light themes, configurable fonts, and native context menus on file tabs, text and project rows are included. Saving checks external disk changes and uses atomic replacement. Explicitly chosen build commands and a one-shot Python SDK support extensions; see [plugins](plugins.md) and [configuration examples](Resources/examples).
 
-The release builds only `Sources/*.swift` and whitelisted Python/JSON resources. Tests, benchmarks, snapshots and test menu diagnostics compile only with `bash build.sh --tests`, into a separate **Source Editor Tests.app**, which declares no document associations. Generated icons come from the original Swift drawing source. No third-party runtime frameworks are bundled.
+Markdown files have an **Edit / Preview / Side by Side** toolbar. Use **⇧⌘V** to toggle rendered preview, **⌥⌘V** for side-by-side, **Outline** to navigate headings, and **Export HTML…** to save the current unsaved document as a styled page. **⇧⌘F** searches the project in a cancellable native sheet. **⌘/** toggles comments; **⇧⌘D** duplicates lines, **⇧⌘K** deletes lines, and **⌥↑ / ⌥↓** moves lines. These actions also appear in menus and the command palette.
+
+**File → Recovery → Enable Auto Recovery** optionally saves unsaved buffers in the background every five seconds. Recover a snapshot in a new window after an unexpected exit; changed or missing original files become untitled buffers. Saving and normal window closure remove the owned snapshot. See [Markdown, search and recovery behavior](docs/document-workspace.md) and [release acceptance and remaining work](docs/product-readiness.md).
+
+The release builds only `Sources/*.swift` and whitelisted Python/JSON resources. Tests, benchmarks, snapshots and test menu diagnostics compile only with `bash build.sh --tests`, into a separate **Source Editor Tests.app**, which declares no document associations. Generated icons come from the original Swift drawing source. Foundation parses Markdown and the system WebKit displays it on demand; no third-party runtime frameworks are bundled.
 
 TextKit lays out visible text on demand. Each document shares its line index and lexical matches across split panes; text edits invalidate these caches at the storage boundary. Only visible syntax matches are painted, and dirty file labels update without recreating every tab. See [performance measurements and remaining costs](PERFORMANCE.md).
 
 The resource reports cover [optimization principles and measured effects](docs/performance-optimization.md) and [release package size and runtime memory](docs/package-and-memory.md). Both reports are included in the standalone source archives.
 
-This is not a complete Sublime Text replacement. Grammar/snippet engines, full plugin compatibility, LSP, minimap, rectangular selection and project-wide search remain incomplete. The Python SDK runs selected code with the current user's permissions; it is not a sandbox. Windows currently has a smaller feature set.
+For 0.7.0, see [Markdown, search, recovery and resource measurements](docs/document-workspace-performance.md), including WebKit helper attribution and preview timing limits.
+
+This is not a complete Sublime Text replacement. Grammar/snippet engines, full plugin compatibility, LSP, minimap, rectangular selection and project regex/replace remain incomplete. The Python SDK runs selected code with the current user's permissions; it is not a sandbox. Windows currently has a smaller feature set.
 
 ## Tests and source package
 

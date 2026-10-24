@@ -1,16 +1,6 @@
 import AppKit
 import UniformTypeIdentifiers
 
-private enum EditorTheme {
-    static var isLight = false
-    static var background: NSColor { isLight ? NSColor(calibratedWhite: 0.98, alpha: 1) : NSColor(calibratedRed: 0.075, green: 0.085, blue: 0.11, alpha: 1) }
-    static var panel: NSColor { isLight ? NSColor(calibratedWhite: 0.92, alpha: 1) : NSColor(calibratedRed: 0.105, green: 0.12, blue: 0.15, alpha: 1) }
-    static var foreground: NSColor { isLight ? NSColor(calibratedWhite: 0.12, alpha: 1) : NSColor(calibratedRed: 0.86, green: 0.89, blue: 0.94, alpha: 1) }
-    static var muted: NSColor { isLight ? NSColor(calibratedWhite: 0.42, alpha: 1) : NSColor(calibratedRed: 0.46, green: 0.52, blue: 0.62, alpha: 1) }
-    static let accent = NSColor(calibratedRed: 0.40, green: 0.70, blue: 1, alpha: 1)
-    static let font = NSFont(name: "Menlo", size: 12) ?? NSFont.monospacedSystemFont(ofSize: 12, weight: .regular)
-}
-
 private final class EditorMenuAction: NSObject {
     let run: () -> Void
     init(_ run: @escaping () -> Void) { self.run = run }
@@ -365,11 +355,54 @@ private final class SingleColumnScrollView: NSScrollView {
     }
 }
 
-private final class EditorSplitView: NSSplitView {
+/// Frame layout, divider painting and drag hit testing share one geometry owner.
+/// NSSplitView's internal divider state cannot track externally assigned frames.
+private final class EditorSplitView: NSView {
     private var fraction: CGFloat = 0.5
+    var isVertical = false
+    var dividerStyle = NSSplitView.DividerStyle.thin
+    var dividerThickness: CGFloat { dividerStyle == .thin ? 1 : 6 }
+    var arrangedSubviews: [NSView] { subviews }
     override var isFlipped: Bool { true }
+    func addArrangedSubview(_ view: NSView) { addSubview(view); needsLayout = true; needsDisplay = true }
+    func removeArrangedSubview(_ view: NSView) { view.removeFromSuperview(); needsLayout = true; needsDisplay = true }
+    private var dividerRect: NSRect? {
+        let visible = arrangedSubviews.filter { !$0.isHidden }
+        guard visible.count == 2 else { return nil }
+        return isVertical ? NSRect(x: visible[0].frame.maxX, y: 0, width: dividerThickness, height: bounds.height)
+            : NSRect(x: 0, y: visible[0].frame.maxY, width: bounds.width, height: dividerThickness)
+    }
+    private var dragRect: NSRect? { dividerRect?.insetBy(dx: isVertical ? -3 : 0, dy: isVertical ? 0 : -3) }
 
-    override func adjustSubviews() {
+    override func draw(_ dirtyRect: NSRect) {
+        super.draw(dirtyRect)
+        guard let divider = dividerRect else { return }
+        NSGraphicsContext.saveGraphicsState()
+        bounds.clip()
+        NSColor.separatorColor.setFill()
+        divider.fill()
+        NSGraphicsContext.restoreGraphicsState()
+    }
+    override func hitTest(_ point: NSPoint) -> NSView? {
+        guard !isHidden else { return nil }
+        if dragRect?.contains(convert(point, from: superview)) == true { return self }
+        return super.hitTest(point)
+    }
+    override func resetCursorRects() {
+        super.resetCursorRects()
+        if let rect = dragRect { addCursorRect(rect, cursor: isVertical ? .resizeLeftRight : .resizeUpDown) }
+    }
+    override func mouseDown(with event: NSEvent) {
+        guard dragRect?.contains(convert(event.locationInWindow, from: nil)) == true else { super.mouseDown(with: event); return }
+        while let next = NSApp.nextEvent(matching: [.leftMouseDragged, .leftMouseUp], until: .distantFuture, inMode: .eventTracking, dequeue: true) {
+            if next.type == .leftMouseUp { break }
+            let point = convert(next.locationInWindow, from: nil)
+            setPosition(isVertical ? point.x : point.y, ofDividerAt: 0)
+            window?.contentView?.layoutSubtreeIfNeeded()
+        }
+    }
+
+    func adjustSubviews() {
         let visible = arrangedSubviews.filter { !$0.isHidden }
         guard bounds.width > 0, bounds.height > 0 else { return }
         guard visible.count == 2 else {
@@ -395,13 +428,15 @@ private final class EditorSplitView: NSSplitView {
         adjustSubviews()
     }
 
-    override func setPosition(_ position: CGFloat, ofDividerAt dividerIndex: Int) {
+    func setPosition(_ position: CGFloat, ofDividerAt dividerIndex: Int) {
         let extent = (isVertical ? bounds.width : bounds.height) - dividerThickness
         if extent > 0 { fraction = max(0, min(1, position / extent)) }
         adjustSubviews()
+        needsDisplay = true
+        window?.invalidateCursorRects(for: self)
     }
 
-    func useFraction(_ value: CGFloat) { fraction = value; adjustSubviews(); needsLayout = true }
+    func useFraction(_ value: CGFloat) { fraction = value; adjustSubviews(); needsLayout = true; needsDisplay = true }
 }
 
 private final class FrameLayoutView: NSView {
@@ -422,6 +457,7 @@ private final class EditorPane: NSObject {
 
     init(document: EditorDocument, delegate: NSTextViewDelegate, focus: @escaping () -> Void) {
         self.document = document
+        scroll.clipsToBounds = true
         layout = NSLayoutManager()
         layout.allowsNonContiguousLayout = true
         let initialFrame = NSRect(x: 0, y: 0, width: 640, height: 400)
@@ -762,11 +798,27 @@ final class EditorWorkspace: NSObject, NSWindowDelegate,
     private var projectRoot: ProjectItem?
     private var projectDocument: EditorProject?
     private var projectFiles: [URL] = []
-    private var projectIndexWork: DispatchWorkItem?
+    private var projectIndexWork: ProjectIndexOperation?
+    private var projectIndexGeneration = 0
+    private var projectSearchPanel: ProjectSearchPanel?
     private var selectionCache: [ObjectIdentifier: [NSValue]] = [:]
     private let projectSplit = EditorSplitView()
     private let workSplit = EditorSplitView()
     private let editorSplit = EditorSplitView()
+    private let contentSplit = EditorSplitView()
+    private let markdownBar = NSStackView()
+    private let markdownModes = NSSegmentedControl(labels: ["Edit", "Preview", "Side by Side"], trackingMode: .selectOne, target: nil, action: nil)
+    private let markdownInfo = NSTextField(labelWithString: "Markdown")
+    private let markdownOutline = NSButton(title: "Outline", target: nil, action: nil)
+    private let markdownExport = NSButton(title: "Export HTML…", target: nil, action: nil)
+    private var markdownPreview: MarkdownPreviewView?
+    private var pendingMarkdownOutline: ObjectIdentifier?
+    private var recovery: EditorRecovery?
+    private var recoveryTimer: Timer?
+    private var recoverySignature = ""
+    private var recoveryMenuItem: NSMenuItem?
+    private var recoveryMessage = "Auto recovery is off"
+    private var markdownModeCache: [ObjectIdentifier: MarkdownViewMode] = [:]
     private let tabs = NSStackView()
     private let outline = ContextOutlineView()
     private let projectLabel = NSTextField(labelWithString: "OPEN FILES")
@@ -847,9 +899,12 @@ final class EditorWorkspace: NSObject, NSWindowDelegate,
         window.makeKeyAndOrderFront(nil)
         NSApp.activate(ignoringOtherApps: true)
         window.makeFirstResponder(currentTextView)
+        #if !EDITOR_TESTS
+        if UserDefaults.standard.bool(forKey: "autoRecovery") { setAutoRecovery(true) }
+        #endif
     }
 
-    var hasRunningWork: Bool { isBuildRunning || isPluginRunning }
+    var hasRunningWork: Bool { isBuildRunning || isPluginRunning || recovery != nil }
 
     func confirmDocumentsBeforeClosing() -> Bool {
         window.makeKeyAndOrderFront(nil)
@@ -888,7 +943,10 @@ final class EditorWorkspace: NSObject, NSWindowDelegate,
 
     func windowWillClose(_ notification: Notification) {
         palette?.dismiss()
+        releaseMarkdownPreview()
         projectIndexWork?.cancel()
+        projectSearchPanel?.close()
+        projectSearchPanel = nil
         NotificationCenter.default.removeObserver(self)
         applicationOwner?.windowClosed(self)
     }
@@ -966,6 +1024,15 @@ final class EditorWorkspace: NSObject, NSWindowDelegate,
         file.addItem(.separator())
         item(file, "Save Session…", #selector(saveSession))
         item(file, "Restore Session…", #selector(loadSession))
+        let recoveryMenu = NSMenu(title: "Recovery")
+        recoveryMenuItem = NSMenuItem(title: "Enable Auto Recovery", action: #selector(toggleAutoRecovery), keyEquivalent: "")
+        recoveryMenuItem?.target = self
+        recoveryMenu.addItem(recoveryMenuItem!)
+        item(recoveryMenu, "Recover Snapshot in New Window…", #selector(recoverSnapshot))
+        item(recoveryMenu, "Show Recovery Folder", #selector(revealRecoveryFolder))
+        let recoveryItem = NSMenuItem(title: "Recovery", action: nil, keyEquivalent: "")
+        recoveryItem.submenu = recoveryMenu
+        file.addItem(recoveryItem)
         let edit = menu("Edit")
         for (title, selector, key) in [("Undo", Selector(("undo:")), "z"), ("Redo", Selector(("redo:")), "Z"),
                                       ("Cut", #selector(NSText.cut(_:)), "x"), ("Copy", #selector(NSText.copy(_:)), "c"),
@@ -976,6 +1043,12 @@ final class EditorWorkspace: NSObject, NSWindowDelegate,
         edit.addItem(.separator())
         item(edit, "Select Next Occurrence", #selector(selectNextOccurrence), "d")
         item(edit, "Select All Occurrences", #selector(selectAllOccurrences), "g", [.command, .control])
+        edit.addItem(.separator())
+        item(edit, "Toggle Comment", #selector(toggleComment), "/")
+        item(edit, "Duplicate Lines", #selector(duplicateLines), "d", [.command, .shift])
+        item(edit, "Delete Lines", #selector(deleteLines), "k", [.command, .shift])
+        item(edit, "Move Lines Up", #selector(moveLinesUp), "\u{f700}", [.option])
+        item(edit, "Move Lines Down", #selector(moveLinesDown), "\u{f701}", [.option])
         item(edit, "Sort Lines", #selector(sortLines))
         item(edit, "Sort Lines (Case Sensitive)", #selector(sortCaseSensitive))
         item(edit, "Reverse Sort Lines", #selector(sortReverse))
@@ -984,6 +1057,7 @@ final class EditorWorkspace: NSObject, NSWindowDelegate,
         item(edit, "Lowercase", #selector(lowercase))
         let find = menu("Find")
         item(find, "Find…", #selector(showFind), "f")
+        item(find, "Find in Project…", #selector(findInProject), "f", [.command, .shift])
         item(find, "Find Next", #selector(findNext), "g")
         item(find, "Find Previous", #selector(findPrevious), "g", [.command, .shift])
         item(find, "Replace…", #selector(showReplace), "f", [.command, .option])
@@ -1010,6 +1084,12 @@ final class EditorWorkspace: NSObject, NSWindowDelegate,
         item(view, "Indent", #selector(indentSelection), "]")
         item(view, "Unindent", #selector(unindentSelection), "[")
         item(view, "Split Editor", #selector(toggleSplit), "2", [.command, .option])
+        view.addItem(.separator())
+        item(view, "Toggle Markdown Preview", #selector(toggleMarkdownPreview), "v", [.command, .shift])
+        item(view, "Markdown Preview to the Side", #selector(markdownToSide), "v", [.command, .option])
+        item(view, "Markdown Outline…", #selector(showMarkdownOutline))
+        item(view, "Export Markdown as HTML…", #selector(exportMarkdown))
+        view.addItem(.separator())
         item(view, "Toggle Sidebar", #selector(toggleSidebar), "b", [.command, .control])
         item(view, "Toggle Output", #selector(toggleOutput))
         item(view, "Next Tab", #selector(nextTab), "]", [.command, .shift])
@@ -1047,6 +1127,9 @@ final class EditorWorkspace: NSObject, NSWindowDelegate,
     }
 
     private func makeWindow() {
+        // macOS 14 changes NSView's default clipping to false. These containers
+        // own bounded panes; ruler/divider drawing must stay inside their frames.
+        for view in [projectSplit, workSplit, editorSplit, contentSplit] { view.clipsToBounds = true }
         window = NSWindow(contentRect: NSRect(x: 0, y: 0, width: 1220, height: 810),
             styleMask: [.titled, .closable, .miniaturizable, .resizable], backing: .buffered, defer: false)
         window.title = "Source Editor"
@@ -1103,6 +1186,7 @@ final class EditorWorkspace: NSObject, NSWindowDelegate,
             if projectScroll.frame != frame { projectScroll.frame = frame; projectScroll.needsLayout = true }
         }
         editorArea = FrameLayoutView()
+        editorArea.clipsToBounds = true
         let tabScroll = NSScrollView()
         tabScroll.hasHorizontalScroller = true
         tabScroll.autohidesScrollers = true
@@ -1115,16 +1199,21 @@ final class EditorWorkspace: NSObject, NSWindowDelegate,
         tabs.translatesAutoresizingMaskIntoConstraints = false
         editorSplit.isVertical = true
         editorSplit.dividerStyle = .thin
+        contentSplit.isVertical = true
+        contentSplit.dividerStyle = .thin
+        contentSplit.useFraction(0.5)
+        contentSplit.addArrangedSubview(editorSplit)
         workSplit.isVertical = false
         workSplit.dividerStyle = .thin
         workSplit.useFraction(0.72)
-        workSplit.addArrangedSubview(editorSplit)
+        workSplit.addArrangedSubview(contentSplit)
         makeOutputArea()
         workSplit.addArrangedSubview(outputArea)
         outputArea.isHidden = true
         status.style(foreground: EditorTheme.muted, background: EditorTheme.panel)
+        makeMarkdownBar()
         makeFindBar()
-        for view in [tabScroll, findBar, workSplit, status] {
+        for view in [tabScroll, markdownBar, findBar, workSplit, status] {
             view.translatesAutoresizingMaskIntoConstraints = true
             view.autoresizingMask = []
             editorArea.addSubview(view)
@@ -1132,9 +1221,11 @@ final class EditorWorkspace: NSObject, NSWindowDelegate,
         editorArea.arrange = { [weak self, weak tabScroll] size in
             guard let self, let tabScroll else { return }
             tabScroll.frame = NSRect(x: 0, y: 0, width: size.width, height: 40)
+            let markdownHeight: CGFloat = self.markdownBar.isHidden ? 0 : 34
+            self.markdownBar.frame = NSRect(x: 10, y: 40, width: max(1, size.width - 20), height: markdownHeight)
             let searchHeight: CGFloat = self.findBar.isHidden ? 0 : self.replaceRow.isHidden ? 32 : 66
-            self.findBar.frame = NSRect(x: 10, y: 42, width: max(1, size.width - 20), height: searchHeight)
-            let top = 44 + searchHeight
+            self.findBar.frame = NSRect(x: 10, y: 42 + markdownHeight, width: max(1, size.width - 20), height: searchHeight)
+            let top = 44 + markdownHeight + searchHeight
             let footer: CGFloat = 31
             let workFrame = NSRect(x: 0, y: top, width: size.width, height: max(1, size.height - top - footer))
             if self.workSplit.frame != workFrame { self.workSplit.frame = workFrame; self.workSplit.needsLayout = true }
@@ -1436,7 +1527,7 @@ final class EditorWorkspace: NSObject, NSWindowDelegate,
     }
 
     private func finishPendingClose() {
-        guard !isBuildRunning, !isPluginRunning else { return }
+        guard !hasRunningWork else { return }
         if pendingTermination { applicationOwner?.workspaceFinishedWork() }
         else if pendingWindowClose {
             pendingWindowClose = false
@@ -1445,6 +1536,10 @@ final class EditorWorkspace: NSObject, NSWindowDelegate,
     }
 
     private func freezeForClose() {
+        finishRecovery()
+        markdownPreview?.stop()
+        projectIndexWork?.cancel()
+        projectSearchPanel?.close()
         for pane in panes { pane.textView.isEditable = false }
         window.makeFirstResponder(nil)
         updateStatus()
@@ -1502,6 +1597,7 @@ final class EditorWorkspace: NSObject, NSWindowDelegate,
         outputView.textColor = EditorTheme.foreground
         outputTitle.textColor = EditorTheme.muted
         outputArea.layer?.backgroundColor = EditorTheme.panel.cgColor
+        markdownInfo.textColor = EditorTheme.muted
         palette.updateTheme()
     }
 
@@ -1553,6 +1649,10 @@ final class EditorWorkspace: NSObject, NSWindowDelegate,
             "sort_lines": #selector(sortLines), "upper_case": #selector(uppercase), "lower_case": #selector(lowercase),
             "build": #selector(runBuildAction), "cancel_build": #selector(cancelBuild),
             "run_plugin": #selector(runPluginAction), "configure": #selector(loadConfiguration),
+            "find_in_project": #selector(findInProject), "markdown_preview": #selector(toggleMarkdownPreview),
+            "markdown_side": #selector(markdownToSide), "toggle_comment": #selector(toggleComment),
+            "duplicate_lines": #selector(duplicateLines), "delete_lines": #selector(deleteLines),
+            "move_lines_up": #selector(moveLinesUp), "move_lines_down": #selector(moveLinesDown),
         ]
         func allItems(_ menu: NSMenu) -> [NSMenuItem] {
             menu.items.flatMap { [$0] + ($0.submenu.map(allItems) ?? []) }
@@ -1578,8 +1678,13 @@ final class EditorWorkspace: NSObject, NSWindowDelegate,
         case #selector(runBuildAction), #selector(chooseBuild): return !isBuildRunning
         case #selector(runPluginAction), #selector(choosePlugin), #selector(choosePython): return !isPluginRunning
         case #selector(saveAll): return documents.contains(where: \.isModified)
+        case #selector(toggleComment): return markdownViewMode != .preview && currentDocument.map { !["txt", "json"].contains($0.syntaxIdentifier) } == true
+        case #selector(duplicateLines), #selector(deleteLines), #selector(moveLinesUp), #selector(moveLinesDown): return markdownViewMode != .preview && currentDocument != nil
         case #selector(revertFile): return currentDocument?.fileURL != nil
         case #selector(reopenClosedFile): return !closedFileURLs.isEmpty
+        case #selector(findInProject): return projectRoot != nil
+        case #selector(toggleMarkdownPreview), #selector(markdownToSide), #selector(showMarkdownOutline): return currentDocument?.syntaxIdentifier == "md"
+        case #selector(exportMarkdown): return currentDocument?.syntaxIdentifier == "md" && markdownPreview?.page != nil && markdownPreview?.isRendering == false
         case #selector(copyFilePath), #selector(copyFileName), #selector(revealCurrentFile): return currentDocument?.fileURL != nil
         case #selector(copyRelativeFilePath): return FilePathFormat.relative.string(for: currentDocument?.fileURL, project: projectRoot?.url) != nil
         case #selector(revealCurrentFileInSidebar): return canRevealInSidebar(currentDocument?.fileURL)
@@ -1735,6 +1840,7 @@ final class EditorWorkspace: NSObject, NSWindowDelegate,
         window.title = "\(document.displayName)\(document.isModified ? " •" : "") — Source Editor"
         window.isDocumentEdited = document.isModified
         window.representedURL = document.fileURL
+        refreshMarkdown()
     }
 
     @objc private func performMenuAction(_ sender: NSMenuItem) {
@@ -1912,6 +2018,22 @@ final class EditorWorkspace: NSObject, NSWindowDelegate,
     }
 
     @objc private func indentSelection() { indent(outdent: false) }
+    @objc private func duplicateLines() { editLines(.duplicate, name: "Duplicate Lines") }
+    @objc private func deleteLines() { editLines(.delete, name: "Delete Lines") }
+    @objc private func moveLinesUp() { editLines(.moveUp, name: "Move Lines Up") }
+    @objc private func moveLinesDown() { editLines(.moveDown, name: "Move Lines Down") }
+    private func editLines(_ action: LineEditAction, name: String) {
+        guard markdownViewMode != .preview, let view = currentTextView as? EditorTextView, let document = currentDocument else { return }
+        view.applyEditorResult(TextOperations.editLines(in: view.string, selections: view.selectedRanges.map(\.rangeValue),
+                                                     action: action, ending: document.settings.lineEnding), name: name)
+    }
+    @objc private func toggleComment() {
+        guard markdownViewMode != .preview, let view = currentTextView as? EditorTextView,
+              let document = currentDocument, let syntax = EditorSyntax.resolve(document.syntaxIdentifier) else { return }
+        let result = TextOperations.toggleComment(in: view.string, selections: view.selectedRanges.map(\.rangeValue), syntax: syntax)
+        if let error = result.error { showError(EditorFailure.invalidEdit(error)); return }
+        view.applyEditorResult(result, name: "Toggle Comment")
+    }
     @objc private func unindentSelection() { indent(outdent: true) }
 
     private func indent(outdent: Bool) {
@@ -1938,20 +2060,23 @@ final class EditorWorkspace: NSObject, NSWindowDelegate,
         outline.expandItem(projectRoot)
         projectFiles.removeAll()
         projectIndexWork?.cancel()
-        let work = DispatchWorkItem { [weak self] in
-            let enumerator = FileManager.default.enumerator(at: url, includingPropertiesForKeys: [.isRegularFileKey],
-                                                            options: [.skipsHiddenFiles, .skipsPackageDescendants])
-            var files: [URL] = []
-            while let file = enumerator?.nextObject() as? URL {
-                if (try? file.resourceValues(forKeys: [.isRegularFileKey]).isRegularFile) == true { files.append(file) }
-            }
+        projectIndexGeneration += 1
+        let generation = projectIndexGeneration
+        let work = ProjectIndexOperation(url)
+        work.completionBlock = { [weak self, weak work] in
+            guard let work, !work.isCancelled else { return }
+            let files = work.files
+            let summary = work.summary
             DispatchQueue.main.async { [weak self] in
-                guard self?.projectRoot?.url == url else { return }
-                self?.projectFiles = files.sorted { $0.path.localizedStandardCompare($1.path) == .orderedAscending }
+                guard let self, self.projectIndexGeneration == generation, self.projectRoot?.url == url else { return }
+                self.projectFiles = files
+                if summary.limited || summary.unreadable > 0 {
+                    self.projectLabel.toolTip = url.path + " — Quick Open indexed \(files.count) files; \(summary.unreadable) unreadable folders" + (summary.limited ? "; 50,000 file limit reached" : "")
+                }
             }
         }
         projectIndexWork = work
-        DispatchQueue.global(qos: .userInitiated).async(execute: work)
+        DispatchQueue.global(qos: .userInitiated).async { work.start() }
     }
 
     func outlineView(_ outlineView: NSOutlineView, numberOfChildrenOfItem item: Any?) -> Int {
@@ -2085,6 +2210,88 @@ final class EditorWorkspace: NSObject, NSWindowDelegate,
             })
     }
 
+    @objc private func toggleAutoRecovery() { setAutoRecovery(recovery == nil) }
+    func setAutoRecovery(_ enabled: Bool, directory: URL? = nil) {
+        guard !pendingTermination, !pendingWindowClose else { return }
+        #if !EDITOR_TESTS
+        UserDefaults.standard.set(enabled, forKey: "autoRecovery")
+        #endif
+        if enabled {
+            guard recovery == nil else { return }
+            recovery = EditorRecovery(directory: directory ?? EditorRecovery.defaultDirectory)
+            recoverySignature = ""
+            recoveryMenuItem?.state = .on
+            recoveryMessage = "Auto recovery is enabled; snapshots update every 5 seconds"
+            recoveryTimer = Timer.scheduledTimer(withTimeInterval: 5, repeats: true) { [weak self] _ in self?.updateRecoverySnapshot() }
+            updateRecoverySnapshot()
+        } else { finishRecovery() }
+        status.location.toolTip = recoveryMessage
+    }
+
+    private func updateRecoverySnapshot() {
+        guard let recovery, !recovery.isWriting, !recovery.isFinishing else { return }
+        let modified = documents.filter(\.isModified)
+        let signature = modified.map { "\(ObjectIdentifier($0)):\($0.revision):\($0.encoding):\($0.settings)" }.joined(separator: "|")
+        guard signature != recoverySignature else { return }
+        guard modified.count <= 128, modified.reduce(0, { $0 + $1.storage.length }) <= EditorRecovery.maximumUTF16 else {
+            recoveryMessage = "Auto recovery paused: capacity exceeded. Save files or use Save Session. Last snapshot may be older."
+            status.location.toolTip = recoveryMessage
+            return
+        }
+        if let document = currentDocument, let view = currentTextView { selectionCache[ObjectIdentifier(document)] = view.selectedRanges }
+        let selected = modified.firstIndex(where: { $0 === currentDocument }) ?? 0
+        let snapshot = modified.isEmpty ? nil : EditorSession(projectPath: projectRoot?.url.path, selectedIndex: selected, split: splitEnabled,
+            documents: modified.map { EditorSession.Document(document: $0, ranges: Array((selectionCache[ObjectIdentifier($0)]?.map(\.rangeValue) ?? []).prefix(4096))) })
+        recoverySignature = signature
+        recovery.write(snapshot) { [weak self, weak recovery] error in
+            guard let self, self.recovery === recovery, !self.pendingWindowClose, !self.pendingTermination else { return }
+            if let error { self.recoverySignature = ""; self.recoveryMessage = "Auto recovery failed: " + error.localizedDescription }
+            else { self.recoveryMessage = snapshot == nil ? "Auto recovery: all documents saved" : "Auto recovery snapshot updated at " + DateFormatter.localizedString(from: Date(), dateStyle: .none, timeStyle: .medium) }
+            self.status.location.toolTip = self.recoveryMessage
+        }
+    }
+
+    private func finishRecovery() {
+        recoveryTimer?.invalidate(); recoveryTimer = nil
+        guard let owner = recovery, !owner.isFinishing else { return }
+        recoveryMenuItem?.state = .off
+        owner.finish { [self, owner] error in
+            if recovery === owner { recovery = nil; recoverySignature = "" }
+            recoveryMessage = error.map { "Recovery snapshot cleanup failed: " + $0.localizedDescription } ?? "Auto recovery is off"
+            status.location.toolTip = recoveryMessage
+            finishPendingClose()
+        }
+    }
+
+    @objc private func recoverSnapshot() {
+        let panel = NSOpenPanel()
+        panel.title = "Recover Snapshot in New Window"
+        panel.message = "Restore unsaved text. A changed or missing original file opens as an untitled recovery buffer."
+        panel.directoryURL = EditorRecovery.defaultDirectory
+        panel.allowedContentTypes = [.json]
+        panel.canChooseDirectories = false
+        guard let url = chooseFiles(panel)?.first else { return }
+        do { _ = try restoreRecoverySnapshot(url) } catch { showError(error) }
+    }
+    @discardableResult
+    func restoreRecoverySnapshot(_ url: URL) throws -> EditorWorkspace {
+        guard !EditorRecovery.activeURLs.contains(url.standardizedFileURL) else {
+            throw EditorFailure.invalidEdit("This snapshot belongs to a live window. Use that window or Save Session instead.")
+        }
+        let session = try EditorSession.load(url)
+        guard let applicationOwner else { throw EditorFailure.invalidEdit("A recovery requires an application workspace owner.") }
+        let workspace = applicationOwner.newWindow()
+        _ = workspace.restoreSession(session)
+        return workspace
+    }
+    @objc private func revealRecoveryFolder() {
+        do {
+            try FileManager.default.createDirectory(at: EditorRecovery.defaultDirectory, withIntermediateDirectories: true,
+                                                   attributes: [.posixPermissions: 0o700])
+            NSWorkspace.shared.open(EditorRecovery.defaultDirectory)
+        } catch { showError(error) }
+    }
+
     @discardableResult
     func restoreSession(_ session: EditorSession) -> Bool {
         guard !isBuildRunning, !isPluginRunning else {
@@ -2100,6 +2307,7 @@ final class EditorWorkspace: NSObject, NSWindowDelegate,
         for view in editorSplit.arrangedSubviews { editorSplit.removeArrangedSubview(view); view.removeFromSuperview() }
         panes.removeAll()
         documents = restored.map(\.0)
+        markdownModeCache.removeAll()
         selectionCache = Dictionary(uniqueKeysWithValues: restored.map { document, ranges in
             (ObjectIdentifier(document), ranges.map { NSValue(range: $0) })
         })
@@ -2292,6 +2500,7 @@ final class EditorWorkspace: NSObject, NSWindowDelegate,
             if closedFileURLs.count > 20 { closedFileURLs.removeFirst() }
         }
         selectionCache.removeValue(forKey: ObjectIdentifier(documents[index]))
+        markdownModeCache.removeValue(forKey: ObjectIdentifier(documents[index]))
         documents.remove(at: index)
         if documents.isEmpty { addDocument(EditorDocument(settings: documentDefaults)) }
         else { selectDocument(min(documents.count - 1, index < oldSelected ? oldSelected - 1 : oldSelected)) }
@@ -2511,6 +2720,173 @@ final class EditorWorkspace: NSObject, NSWindowDelegate,
         return fileChooser.choose(panel, for: window)
     }
 
+    @objc private func findInProject() {
+        guard !pendingTermination, !pendingWindowClose, let root = projectRoot?.url else { return }
+        if let existing = projectSearchPanel { existing.panel.makeKeyAndOrderFront(nil); return }
+        palette?.dismiss()
+        let search = ProjectSearchPanel(root: root)
+        search.didClose = { [weak self] in self?.projectSearchPanel = nil }
+        search.selectHit = { [weak self] in self?.openProjectSearchHit($0) }
+        projectSearchPanel = search
+        let text = currentTextView
+        let selection = text?.selectedRange() ?? NSRange(location: 0, length: 0)
+        let query = selection.length > 0 && selection.length <= 1024 ? (text!.string as NSString).substring(with: selection) : ""
+        search.show(for: window, query: query)
+    }
+
+    func openProjectSearchHit(_ hit: ProjectSearchHit) {
+        openDocument(hit.file)
+        guard let document = currentDocument, document.fileURL == hit.file.standardizedFileURL.resolvingSymlinksInPath(), let view = currentTextView else { return }
+        let text = document.storage.string as NSString
+        guard hit.range.location >= 0, hit.range.length >= 0, hit.range.location <= text.length,
+              hit.range.length <= text.length - hit.range.location, text.substring(with: hit.range) == hit.matchedText else {
+            showError(EditorFailure.invalidEdit("The file changed after the search. Search again to locate the current text."))
+            return
+        }
+        if markdownViewMode == .preview { setMarkdownMode(.edit) }
+        view.setSelectedRange(hit.range)
+        view.scrollRangeToVisible(hit.range)
+        window.makeFirstResponder(view)
+        updateStatus()
+    }
+
+    private func makeMarkdownBar() {
+        markdownBar.orientation = .horizontal
+        markdownBar.spacing = 10
+        markdownBar.alignment = .centerY
+        markdownBar.isHidden = true
+        markdownModes.target = self
+        markdownModes.action = #selector(markdownModeChanged)
+        markdownModes.selectedSegment = 0
+        markdownModes.setAccessibilityLabel("Markdown view mode")
+        markdownModes.toolTip = "Edit source, read the rendered document, or show both"
+        markdownOutline.target = self
+        markdownOutline.action = #selector(showMarkdownOutline)
+        markdownExport.target = self
+        markdownExport.action = #selector(exportMarkdown)
+        markdownInfo.font = .systemFont(ofSize: 11)
+        markdownInfo.textColor = EditorTheme.muted
+        markdownInfo.lineBreakMode = .byTruncatingTail
+        markdownInfo.setContentCompressionResistancePriority(.defaultLow, for: .horizontal)
+        for view in [markdownModes, markdownInfo, NSView(), markdownOutline, markdownExport] { markdownBar.addArrangedSubview(view) }
+    }
+
+    var markdownViewMode: MarkdownViewMode {
+        guard let document = currentDocument, document.syntaxIdentifier == "md" else { return .edit }
+        return markdownModeCache[ObjectIdentifier(document)] ?? .edit
+    }
+
+    private func refreshMarkdown() {
+        guard !pendingTermination, !pendingWindowClose else { releaseMarkdownPreview(); return }
+        let supported = currentDocument?.syntaxIdentifier == "md"
+        if markdownBar.isHidden == supported { markdownBar.isHidden = !supported; editorArea.needsLayout = true }
+        let mode = markdownViewMode
+        markdownModes.selectedSegment = mode.rawValue
+        if editorSplit.isHidden != (mode == .preview) { editorSplit.isHidden = mode == .preview; contentSplit.needsLayout = true }
+        guard supported, mode != .edit, let document = currentDocument else {
+            releaseMarkdownPreview()
+            refreshMarkdownInfo()
+            return
+        }
+        if markdownPreview == nil {
+            let preview = MarkdownPreviewView(frame: .zero)
+            preview.didRender = { [weak self] in
+                guard let self else { return }
+                self.refreshMarkdownInfo()
+                guard let pending = self.pendingMarkdownOutline,
+                      self.currentDocument.map(ObjectIdentifier.init) == pending,
+                      self.markdownPreview?.isRendering == false else { return }
+                self.pendingMarkdownOutline = nil
+                if self.markdownPreview?.page != nil {
+                    DispatchQueue.main.async { [weak self] in
+                        guard let self, self.currentDocument.map(ObjectIdentifier.init) == pending,
+                              self.markdownViewMode != .edit else { return }
+                        self.showMarkdownOutline()
+                    }
+                }
+            }
+            preview.openFile = { [weak self] url in self?.openDocument(url) }
+            markdownPreview = preview
+            contentSplit.addArrangedSubview(preview)
+            contentSplit.adjustSubviews()
+            contentSplit.useFraction(0.5)
+        }
+        markdownPreview?.update(document: document, projectURL: projectRoot?.url, light: EditorTheme.isLight)
+        refreshMarkdownInfo()
+    }
+
+    private func releaseMarkdownPreview() {
+        pendingMarkdownOutline = nil
+        guard let preview = markdownPreview else { return }
+        preview.stop()
+        contentSplit.removeArrangedSubview(preview)
+        preview.removeFromSuperview()
+        markdownPreview = nil
+        contentSplit.adjustSubviews()
+    }
+
+    private func refreshMarkdownInfo() {
+        let page = markdownPreview?.page
+        markdownInfo.stringValue = page.map { "\($0.wordCount) words · \(max(1, ($0.wordCount + 219) / 220)) min read" } ?? "Markdown"
+        markdownExport.isEnabled = page != nil && markdownPreview?.isRendering == false
+        markdownOutline.isEnabled = currentDocument?.syntaxIdentifier == "md"
+    }
+
+    func setMarkdownMode(_ mode: MarkdownViewMode) {
+        guard !pendingTermination, !pendingWindowClose, let document = currentDocument, document.syntaxIdentifier == "md" else { return }
+        markdownModeCache[ObjectIdentifier(document)] = mode
+        if mode == .preview { findBar.isHidden = true; editorArea.needsLayout = true }
+        refreshMarkdown()
+        contentSplit.adjustSubviews()
+        contentSplit.useFraction(0.5)
+        window.makeFirstResponder(mode == .preview ? markdownPreview?.webView : currentTextView)
+    }
+    @objc private func markdownModeChanged() { setMarkdownMode(MarkdownViewMode(rawValue: markdownModes.selectedSegment) ?? .edit) }
+    @objc private func toggleMarkdownPreview() { setMarkdownMode(markdownViewMode == .preview ? .edit : .preview) }
+    @objc private func markdownToSide() { setMarkdownMode(markdownViewMode == .sideBySide ? .edit : .sideBySide) }
+
+    @objc private func showMarkdownOutline() {
+        if markdownViewMode == .edit { setMarkdownMode(.sideBySide) }
+        if markdownPreview?.isRendering == true {
+            pendingMarkdownOutline = currentDocument.map(ObjectIdentifier.init)
+            return
+        }
+        guard let headings = markdownPreview?.page?.headings, !headings.isEmpty else { return }
+        let menu = NSMenu(title: "Markdown Outline")
+        for heading in headings {
+            let item = actionItem(heading.title) { [weak self] in self?.selectMarkdownHeading(heading) }
+            item.indentationLevel = min(4, max(0, heading.level - 1))
+            menu.addItem(item)
+        }
+        menu.popUp(positioning: nil, at: NSPoint(x: 0, y: markdownOutline.bounds.height), in: markdownOutline)
+    }
+
+    func selectMarkdownHeading(_ heading: MarkdownHeading) {
+        guard let document = currentDocument, let text = currentTextView else { return }
+        let starts = document.lineIndex.starts
+        guard starts.indices.contains(heading.line - 1) else { return }
+        text.setSelectedRange(NSRange(location: starts[heading.line - 1], length: 0))
+        text.scrollRangeToVisible(text.selectedRange())
+        markdownPreview?.showHeading(heading)
+        updateStatus()
+    }
+
+    @objc private func exportMarkdown() {
+        guard let page = markdownPreview?.page, markdownPreview?.isRendering == false else { return }
+        let panel = NSSavePanel()
+        panel.title = "Export Markdown as HTML"
+        panel.allowedContentTypes = [.html]
+        panel.nameFieldStringValue = (currentDocument?.fileURL?.deletingPathExtension().lastPathComponent ?? "document") + ".html"
+        guard let destination = chooseFiles(panel)?.first else { return }
+        do { try Data(page.exportHTML.utf8).write(to: destination, options: .atomic) }
+        catch { showError(error) }
+    }
+
+    #if EDITOR_TESTS
+    var markdownPreviewForTesting: MarkdownPreviewView? { markdownPreview }
+    var projectSearchForTesting: ProjectSearchPanel? { projectSearchPanel }
+    #endif
+
     @objc private func toggleSplit() {
         if let document = currentDocument, let text = currentTextView { selectionCache[ObjectIdentifier(document)] = text.selectedRanges }
         splitEnabled.toggle()
@@ -2581,6 +2957,10 @@ final class EditorWorkspace: NSObject, NSWindowDelegate,
             ("File: Close Tab", "⌘W", { [weak self] in self?.closeTab() }),
             ("File: Reopen Closed File", "⇧⌘T", { [weak self] in self?.reopenClosedFile() }),
             ("View: Split Editor", "⌥⌘2 · shared document", { [weak self] in self?.toggleSplit() }),
+            ("Markdown: Toggle Preview", "⇧⌘V", { [weak self] in self?.toggleMarkdownPreview() }),
+            ("Markdown: Preview to the Side", "⌥⌘V", { [weak self] in self?.markdownToSide() }),
+            ("Markdown: Document Outline", "Headings and source navigation", { [weak self] in self?.showMarkdownOutline() }),
+            ("Markdown: Export HTML", "Standalone rendered document", { [weak self] in self?.exportMarkdown() }),
             ("View: Toggle Sidebar", "⌃⌘B", { [weak self] in self?.toggleSidebar() }),
             ("View: Toggle Output", "", { [weak self] in self?.toggleOutput() }),
             ("Build: Run", "⌘B", { [weak self] in self?.runBuildAction() }),
@@ -2601,10 +2981,18 @@ final class EditorWorkspace: NSObject, NSWindowDelegate,
             ("Go to: File", "⌘P", { [weak self] in self?.quickOpen() }),
             ("Go to: Line", "⌘L", { [weak self] in self?.goToLine() }),
             ("Find: Search", "⌘F", { [weak self] in self?.showFind() }),
+            ("Find: Search Project", "⇧⌘F · background disk search", { [weak self] in self?.findInProject() }),
             ("Find: Replace", "⌥⌘F", { [weak self] in self?.showReplace() }),
             ("Selection: Next Occurrence", "⌘D", { [weak self] in self?.selectNextOccurrence() }),
             ("Selection: All Occurrences", "⌃⌘G", { [weak self] in self?.selectAllOccurrences() }),
             ("Lines: Sort", "Case insensitive", { [weak self] in self?.sortLines() }),
+            ("Lines: Duplicate", "⇧⌘D", { [weak self] in self?.duplicateLines() }),
+            ("Lines: Delete", "⇧⌘K", { [weak self] in self?.deleteLines() }),
+            ("Lines: Move Up", "⌥↑", { [weak self] in self?.moveLinesUp() }),
+            ("Lines: Move Down", "⌥↓", { [weak self] in self?.moveLinesDown() }),
+            ("Edit: Toggle Comment", "⌘/ · current syntax", { [weak self] in self?.toggleComment() }),
+            ("Recovery: Toggle Auto Recovery", "Periodic snapshots of unsaved buffers", { [weak self] in self?.toggleAutoRecovery() }),
+            ("Recovery: Restore Snapshot", "Recover in a new window", { [weak self] in self?.recoverSnapshot() }),
             ("Lines: Sort Case Sensitive", "", { [weak self] in self?.sortCaseSensitive() }),
             ("Lines: Reverse Sort", "", { [weak self] in self?.sortReverse() }),
             ("Lines: Unique Sorted", "Remove duplicate lines", { [weak self] in self?.sortUnique() }),
@@ -2802,12 +3190,17 @@ final class EditorWorkspace: NSObject, NSWindowDelegate,
         case "copy_file_name": copyFileName()
         case "reveal_in_side_bar": revealCurrentFileInSidebar()
         case "split": toggleSplit()
+        case "markdown_preview": toggleMarkdownPreview()
+        case "markdown_side": markdownToSide()
+        case "markdown_edit": setMarkdownMode(.edit)
+        case "markdown_export": exportMarkdown()
         case "sort_lines": sortLines()
         case "upper_case": uppercase()
         case "lower_case": lowercase()
         case "select_next": selectNextOccurrence()
         case "select_all_occurrences": selectAllOccurrences()
         case "find": showFind()
+        case "find_in_project": findInProject()
         case "command_palette": showCommands()
         case "dismiss_palette": palette.dismiss()
         case "quick_open": quickOpen()
@@ -2821,6 +3214,11 @@ final class EditorWorkspace: NSObject, NSWindowDelegate,
         case "font_decrease": decreaseFontSize()
         case "font_reset": resetFontSize()
         case "indent": indentSelection()
+        case "duplicate_lines": duplicateLines()
+        case "delete_lines": deleteLines()
+        case "move_lines_up": moveLinesUp()
+        case "move_lines_down": moveLinesDown()
+        case "toggle_comment": toggleComment()
         case "unindent": unindentSelection()
         case "save_session": saveSession()
         case "restore_session": loadSession()
@@ -2830,6 +3228,9 @@ final class EditorWorkspace: NSObject, NSWindowDelegate,
     }
 
     #if EDITOR_TESTS
+    var recoveryURLForTesting: URL? { recovery?.url }
+    var recoveryMessageForTesting: String { recoveryMessage }
+    func updateRecoveryForTesting() { recoverySignature = "force"; updateRecoverySnapshot() }
     var snapshot: [String: Any] {
         ["title": window?.title ?? "", "documentCount": documents.count,
          "selectedIndex": selectedIndex, "paneCount": panes.count,
