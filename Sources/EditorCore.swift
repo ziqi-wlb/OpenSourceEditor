@@ -27,6 +27,7 @@ final class EditorDocument: NSObject, NSTextStorageDelegate {
     private var cachedTextModified: Bool? = false
     private var cachedLineIndex: DocumentLineIndex?
     private var cachedHighlights: (syntax: String, value: SyntaxHighlights)?
+    private var presentation: (font: NSFont, paragraph: NSParagraphStyle, foreground: NSColor)?
     private(set) var diskEncoding = EditorEncoding.utf8
     var displayName: String { fileURL?.lastPathComponent ?? "Untitled" }
     var isModified: Bool {
@@ -81,6 +82,22 @@ final class EditorDocument: NSObject, NSTextStorageDelegate {
         cachedTextModified = nil
         cachedLineIndex = nil
         cachedHighlights = nil
+        presentation = nil
+    }
+
+    // Storage attributes belong to the document shared by every split pane.
+    // Reattaching a view must not rewrite a whole unchanged document. Character
+    // edits invalidate this presentation because native typing/undo can supply
+    // different attributes; text facts and dirty state are independent of it.
+    func applyPresentation(font: NSFont, paragraph: NSParagraphStyle, foreground: NSColor) {
+        if let presentation, presentation.font == font,
+           presentation.paragraph == paragraph,
+           presentation.foreground == foreground { return }
+        storage.beginEditing()
+        storage.addAttributes([.font: font, .paragraphStyle: paragraph, .foregroundColor: foreground],
+                              range: NSRange(location: 0, length: storage.length))
+        storage.endEditing()
+        presentation = (font, paragraph.copy() as! NSParagraphStyle, foreground)
     }
 
     static func open(_ url: URL, encoding: EditorEncoding? = nil, settings: DocumentSettings = DocumentSettings()) throws -> EditorDocument {

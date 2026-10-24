@@ -496,8 +496,6 @@ private final class EditorPane: NSObject {
         textView.isAutomaticSpellingCorrectionEnabled = false
         textView.isContinuousSpellCheckingEnabled = false
         textView.allowsUndo = true
-        textView.font = EditorTheme.font
-        textView.textColor = EditorTheme.foreground
         textView.backgroundColor = EditorTheme.background
         textView.insertionPointColor = EditorTheme.accent
         textView.selectedTextAttributes = [.backgroundColor: NSColor(calibratedRed: 0.18, green: 0.32, blue: 0.48, alpha: 1)]
@@ -535,16 +533,18 @@ private final class EditorPane: NSObject {
     func applyConfiguration(_ configuration: EditorConfiguration) {
         let font = NSFont(name: configuration.fontName, size: CGFloat(configuration.fontSize)) ??
             NSFont.monospacedSystemFont(ofSize: CGFloat(configuration.fontSize), weight: .regular)
-        textView.font = font
+        if document.storage.length == 0 {
+            textView.font = font
+            textView.textColor = EditorTheme.foreground
+        }
         textView.typingAttributes[.font] = font
+        textView.typingAttributes[.foregroundColor] = EditorTheme.foreground
         let paragraph = NSMutableParagraphStyle()
         paragraph.tabStops = []
         paragraph.defaultTabInterval = (" " as NSString).size(withAttributes: [.font: font]).width * CGFloat(document.settings.tabSize)
         textView.defaultParagraphStyle = paragraph
         textView.typingAttributes[.paragraphStyle] = paragraph
-        let entire = NSRange(location: 0, length: document.storage.length)
-        document.storage.addAttribute(.font, value: font, range: entire)
-        document.storage.addAttribute(.paragraphStyle, value: paragraph, range: entire)
+        document.applyPresentation(font: font, paragraph: paragraph, foreground: EditorTheme.foreground)
         let wraps = configuration.wrapsText(isSourceCode: document.syntaxIsSourceCode)
         scroll.hasHorizontalScroller = !wraps
         textView.isHorizontallyResizable = !wraps
@@ -552,7 +552,6 @@ private final class EditorPane: NSObject {
         textView.textContainer?.containerSize = NSSize(width: wraps ? max(64, textView.bounds.width) : CGFloat.greatestFiniteMagnitude,
                                                       height: CGFloat.greatestFiniteMagnitude)
         textView.backgroundColor = EditorTheme.background
-        textView.textColor = EditorTheme.foreground
         scroll.backgroundColor = EditorTheme.background
         scheduleHighlight()
     }
@@ -1565,6 +1564,7 @@ final class EditorWorkspace: NSObject, NSWindowDelegate,
         noticeLabel.setContentCompressionResistancePriority(.defaultLow, for: .horizontal)
         noticeButton.target = self; noticeButton.action = #selector(performNoticeAction)
         let dismiss = NSButton(title: "×", target: self, action: #selector(dismissNotice))
+        EditorTheme.styleIconButton(dismiss, symbol: "xmark", label: "Dismiss notification")
         for view in [noticeLabel, noticeButton, dismiss] { noticeBar.addArrangedSubview(view) }
         for view in [tabScroll, noticeBar, markdownBar, findBar, workSplit, status] {
             view.translatesAutoresizingMaskIntoConstraints = true
@@ -1627,9 +1627,12 @@ final class EditorWorkspace: NSObject, NSWindowDelegate,
         findMessage.textColor = EditorTheme.muted
         let next = NSButton(title: "↓", target: self, action: #selector(findNext))
         let previous = NSButton(title: "↑", target: self, action: #selector(findPrevious))
+        EditorTheme.styleIconButton(next, symbol: "chevron.down", label: "Next match")
+        EditorTheme.styleIconButton(previous, symbol: "chevron.up", label: "Previous match")
         let replace = NSButton(title: "Replace", target: self, action: #selector(replaceOne))
         let replaceAll = NSButton(title: "All", target: self, action: #selector(replaceAll))
         let close = NSButton(title: "×", target: self, action: #selector(hideFind))
+        EditorTheme.styleIconButton(close, symbol: "xmark", label: "Close search")
         for view in [findField, regexToggle, caseToggle, previous, next, findMessage, close] { findRow.addArrangedSubview(view) }
         for view in [replaceField, replace, replaceAll] { replaceRow.addArrangedSubview(view) }
         findBar.addArrangedSubview(findRow)
@@ -1649,6 +1652,7 @@ final class EditorWorkspace: NSObject, NSWindowDelegate,
         outputTitle.textColor = EditorTheme.muted
         let clear = NSButton(title: "Clear", target: self, action: #selector(clearOutput))
         let close = NSButton(title: "×", target: self, action: #selector(toggleOutput))
+        EditorTheme.styleIconButton(close, symbol: "xmark", label: "Close output")
         let header = NSStackView(views: [outputTitle, NSView(), clear, close])
         header.orientation = .horizontal
         header.spacing = 8
@@ -2086,6 +2090,13 @@ final class EditorWorkspace: NSObject, NSWindowDelegate,
 
     func selectDocument(_ index: Int) {
         guard documents.indices.contains(index) else { return }
+        if selectedIndex == index, panes.count == (splitEnabled ? 2 : 1),
+           panes.first?.document === documents[index], tabs.arrangedSubviews.count == documents.count {
+            activePane = 0
+            window.makeFirstResponder(panes.first?.textView)
+            updateStatus()
+            return
+        }
         if let document = currentDocument, let text = currentTextView {
             selectionCache[ObjectIdentifier(document)] = text.selectedRanges
         }
@@ -2151,6 +2162,7 @@ final class EditorWorkspace: NSObject, NSWindowDelegate,
                 return self?.documentContextMenu(document)
             }
             let close = NSButton(title: "×", target: self, action: #selector(tabCloseClicked))
+            EditorTheme.styleIconButton(close, symbol: "xmark", label: "Close " + document.displayName)
             close.tag = index
             close.isBordered = false
             close.contentTintColor = EditorTheme.muted
@@ -2699,6 +2711,10 @@ final class EditorWorkspace: NSObject, NSWindowDelegate,
         }
         let session = try EditorSession.load(url)
         guard let applicationOwner else { throw EditorFailure.invalidEdit("A recovery requires an application workspace owner.") }
+        let sourceDirectory = url.deletingLastPathComponent().standardizedFileURL
+        let ownedDirectories = [applicationOwner.recoveryDirectory, EditorRecovery.defaultDirectory,
+                                recovery?.url.deletingLastPathComponent()].compactMap { $0?.standardizedFileURL }
+        let isOwnedBackup = ownedDirectories.contains(sourceDirectory)
         let workspace = existing ?? applicationOwner.newWindow()
         if existing == nil, let saved = session.workspace { workspace.restoreDesktop(saved) }
         guard workspace.restoreSession(session, preservingCleanDocuments: existing != nil || session.workspace != nil) else {
@@ -2706,13 +2722,13 @@ final class EditorWorkspace: NSObject, NSWindowDelegate,
         }
         // Transfer recovery ownership only after the replacement backup is on
         // disk. A crash during restore cannot silently consume the only copy.
-        workspace.setAutoRecovery(true, directory: url.deletingLastPathComponent())
+        workspace.setAutoRecovery(true, directory: isOwnedBackup ? sourceDirectory : applicationOwner.recoveryDirectory)
         if let owner = workspace.recovery, var snapshot = try workspace.makeRecoverySnapshot() {
             snapshot.closedNormally = session.closedNormally == true
             EditorRecovery.activeURLs.insert(url.standardizedFileURL)
             owner.write(snapshot) { [weak workspace] error in
                 if let error { workspace?.showNotice("Draft restored; original backup retained: " + error.localizedDescription) }
-                else {
+                else if isOwnedBackup {
                     do { try FileManager.default.removeItem(at: url) }
                     catch { workspace?.showNotice("Draft restored; previous backup could not be removed: " + error.localizedDescription) }
                 }

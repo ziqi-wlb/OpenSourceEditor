@@ -61,7 +61,7 @@ Single-file search runs in the background with debounce, cancellation and revisi
 
 The release builds only `Sources/*.swift` and whitelisted Python/JSON resources. Tests, benchmarks, snapshots and test menu diagnostics compile only with `bash build.sh --tests`, into a separate **Source Editor Tests.app**, which declares no document associations. Generated icons come from the original Swift drawing source. Foundation parses Markdown and the system WebKit displays it on demand; no third-party runtime frameworks are bundled.
 
-TextKit lays out visible text on demand. Each document shares its line index and lexical matches across split panes; text edits invalidate these caches at the storage boundary. Only visible syntax matches are painted, and dirty file labels update without recreating every tab. See [performance measurements and remaining costs](PERFORMANCE.md).
+TextKit lays out visible text on demand. Each document shares its line index and lexical matches across split panes; text edits invalidate these caches at the storage boundary. Only visible syntax matches are painted, and dirty file labels update without recreating every tab. Repeated tab selection now reuses the current editor view, and document-owned display styles avoid redundant full-buffer restyling. A matched multi-file sample reduced its maximum event-loop delay; open/close batches still have measurable stalls. See [performance measurements and remaining costs](docs/presentation-performance.md) and [historical reports](PERFORMANCE.md).
 
 The resource reports cover [optimization principles and measured effects](docs/performance-optimization.md) and [release package size and runtime memory](docs/package-and-memory.md). Both reports are included in the standalone source archives.
 

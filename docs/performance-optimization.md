@@ -2,7 +2,7 @@
 
 Performance investigations use the actual Swift/AppKit implementation in an isolated test application. Measurements and fixture files stay in ignored `.build/performance/` directories. Existing editor instances and unsaved user documents are preserved. This report covers macOS; Windows performance is unmeasured.
 
-For 0.9.0 recovery queue behavior, bounded write timings and current open/edit/lifecycle measurements, see [the latest resource report](release-090-performance.md). The older optimization results below retain their original workload and version scope.
+For 0.9.1 display-style ownership and multi-file A/B results, see [presentation performance](presentation-performance.md). For 0.9.0 recovery queue behavior, bounded write timings and current open/edit/lifecycle measurements, see [the draft resource report](release-090-performance.md). The older optimization results below retain their original workload and version scope.
 
 ## Workloads and measurement limits
 

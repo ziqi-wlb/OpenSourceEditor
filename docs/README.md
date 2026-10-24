@@ -12,6 +12,7 @@
 | 文本编辑性能原理与已测效果 | [Performance optimization](performance-optimization.md) |
 | 包大小、RSS 与 footprint | [Package and memory](package-and-memory.md) |
 | 0.9.0 草稿、包与运行资源实测 | [0.9.0 performance](release-090-performance.md) |
+| 多文件切换性能、字体与矢量按钮 | [Presentation performance](presentation-performance.md) |
 | Markdown / WebKit 资源测量 | [Document workspace performance](document-workspace-performance.md) |
 | 真实验收范围与待办 | [Product readiness](product-readiness.md) |
 | 日常工作差距分析 | [Daily use gaps](daily-use-gap-analysis.md) |

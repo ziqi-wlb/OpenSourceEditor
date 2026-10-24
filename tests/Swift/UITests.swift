@@ -414,6 +414,18 @@ enum UITestRunner {
             delegate.applyConfiguration(config)
             print("DETAIL config theme=\(delegate.snapshot["theme"] ?? "nil") font=\(String(describing: view.font))")
             check("live configuration", delegate.snapshot["theme"] as? String == "light" && view.font?.pointSize == 16)
+            check("Configuration styles all split storage", shared.allSatisfy { $0.font?.pointSize == 16 } &&
+                  (document.storage.attribute(.font, at: document.storage.length - 1, effectiveRange: nil) as? NSFont)?.pointSize == 16)
+            let beforeReselect = delegate.currentTextView
+            let beforeReselectRanges = beforeReselect?.selectedRanges
+            delegate.selectDocument(delegate.documents.firstIndex(where: { $0 === document })!)
+            check("Reselecting active tab preserves view and selections", delegate.currentTextView === beforeReselect &&
+                  delegate.currentTextView?.selectedRanges == beforeReselectRanges)
+            let styledSource = document.storage.string
+            let styledRevision = document.revision
+            delegate.applyConfiguration(config)
+            check("Presentation preserves clean text and revision", document.storage.string == styledSource &&
+                  document.revision == styledRevision && !document.isModified)
             var noWrap = config
             noWrap.wordWrap = false
             delegate.applyConfiguration(noWrap)

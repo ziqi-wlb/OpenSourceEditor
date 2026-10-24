@@ -45,6 +45,9 @@ enum DraftRecoveryUITests {
             let source = try Data(contentsOf: file)
             let workspace = app.newWindow(openURLs: [file])
             workspace.activateMenus()
+            func descendants(_ view: NSView) -> [NSView] { [view] + view.subviews.flatMap(descendants) }
+            let tabClose = descendants(workspace.window.contentView!).compactMap { $0 as? NSButton }.first { $0.accessibilityLabel() == "Close original.md" }
+            check("Tab close uses accessible SF Symbol", tabClose?.image != nil && tabClose?.accessibilityLabel() == "Close original.md")
             let fontMenu = NSApp.mainMenu?.item(withTitle: "Preferences")?.submenu?.item(withTitle: "Editor Font")?.submenu
             check("Font chooser offers installed monospaced families", fontMenu?.items.contains(where: { $0.title == "Menlo" }) == true)
             let fontSource = workspace.currentDocument!.storage.string
@@ -83,6 +86,12 @@ enum DraftRecoveryUITests {
             external.currentDocument!.setTextUndoably("# Protected draft", actionName: "Fixture")
             let externalSnapshot = app.recoveryDirectory.appendingPathComponent("external.json")
             try external.sessionSnapshot.save(externalSnapshot)
+            let imported = directory.appendingPathComponent("imported-session.json")
+            try external.sessionSnapshot.save(imported)
+            let importedBytes = try Data(contentsOf: imported)
+            let importedWindow = try external.restoreRecoverySnapshot(imported)
+            check("Import creates backup in owned support directory", importedWindow.recoveryURLForTesting?.deletingLastPathComponent() == app.recoveryDirectory)
+            check("Imported session is retained byte-for-byte", await wait { importedWindow.recoveryURLForTesting.flatMap { try? EditorSession.load($0) } != nil } && (try? Data(contentsOf: imported)) == importedBytes)
             try "# New external content".write(to: file, atomically: true, encoding: .utf8)
             let detached = try external.restoreRecoverySnapshot(externalSnapshot)
             check("Changed disk recovers into detached dirty buffer", detached.currentDocument?.fileURL == nil && detached.currentDocument?.storage.string == "# Protected draft" && detached.currentDocument?.isModified == true)
