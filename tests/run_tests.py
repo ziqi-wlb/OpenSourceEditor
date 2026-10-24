@@ -65,12 +65,13 @@ def main():
     run('portability', [sys.executable,'tests/check_portability.py'])
     run('test-build', ['bash','build.sh','--tests'],timeout=180)
     binary = app/'.build/Source Editor Tests.app/Contents/MacOS/source-editor'
-    for kind, flag in [('core','--self-test'),('preferences','--preferences-test'),('document-settings','--document-settings-test'),('product-features','--product-features-test'),('services','--service-test'),('benchmark','--benchmark')]:
+    for kind, flag in [('core','--self-test'),('preferences','--preferences-test'),('document-settings','--document-settings-test'),('product-features','--product-features-test'),('daily-features','--daily-features-test'),('services','--service-test'),('benchmark','--benchmark')]:
         run(kind,[str(binary),flag],style='json')
     run('contracts',[str(binary),'--contract-test','tests/fixtures/contracts.json'],style='json')
     run('sdk',[sys.executable,'tests/plugin_host_test.py'],style='sdk')
     run('recovery-crash',[sys.executable,'tests/recovery_crash_test.py',str(binary)],style='json')
     if args.ui:
+        run('daily-ui',[str(binary),'--daily-ui-test','--daily-directory='+str(output/'daily-ui-artifacts')],timeout=45,style='json')
         run('product-ui',[str(binary),'--product-ui-test','--product-directory='+str(output/'product-ui-artifacts')],timeout=60,style='json')
         run('ui',[str(binary),'--ui-self-test',str(output/'ui-artifacts')],timeout=90,style='ui')
         run('multi-window-quit',[str(binary),'--multi-window-quit-test'],timeout=15,style='json')

@@ -56,7 +56,7 @@ final class EditorDocument: NSObject, NSTextStorageDelegate {
     }
     var lineEnding: String { settings.lineEnding.text }
     var encodingDescription: String { encoding.displayName }
-    private var resolvedSyntax: EditorSyntax? {
+    var resolvedSyntax: EditorSyntax? {
         if let supplied = settings.syntax { return EditorSyntax.resolve(supplied) }
         return fileURL.flatMap { EditorSyntax.resolve($0.pathExtension) } ?? .plainText
     }
@@ -106,6 +106,22 @@ final class EditorDocument: NSObject, NSTextStorageDelegate {
         cachedTextModified = false
         diskEncoding = encoding
         notifyChanged()
+    }
+
+    func relocate(to url: URL) {
+        fileURL = url.standardizedFileURL.resolvingSymlinksInPath()
+        markChanged()
+    }
+    func detachAfterTrash() {
+        fileURL = nil; diskDigest = nil; savedText = ""; cachedTextModified = nil
+        markChanged()
+    }
+    func acceptExternalText(_ text: String, encoding: EditorEncoding, digest: Data) {
+        guard !isModified else { return }
+        storage.replaceCharacters(in: NSRange(location: 0, length: storage.length), with: text)
+        savedText = text; self.encoding = encoding; diskEncoding = encoding; diskDigest = digest
+        settings.lineEnding = LineEnding.detect(in: text); cachedTextModified = false
+        undoManager.removeAllActions(); markChanged()
     }
 
     private func notifyChanged() { NotificationCenter.default.post(name: .editorDocumentChanged, object: self) }
@@ -345,26 +361,5 @@ enum TextOperations {
             return TextReplacement(range: range, text: upper ? selected.uppercased() : selected.lowercased())
         }
         return apply(in: text, edits: edits)
-    }
-}
-
-enum SearchEngine {
-    static func find(in text: String, query: String, regex: Bool = false, caseSensitive: Bool = false) throws -> [NSRange] {
-        guard !query.isEmpty else { return [] }
-        let pattern = regex ? query : NSRegularExpression.escapedPattern(for: query)
-        let expression = try NSRegularExpression(pattern: pattern, options: caseSensitive ? [] : [.caseInsensitive])
-        return expression.matches(in: text, range: NSRange(location: 0, length: (text as NSString).length)).map(\.range)
-    }
-    static func replacing(in text: String, query: String, replacement: String,
-                          regex: Bool = false, caseSensitive: Bool = false, range: NSRange? = nil) throws -> TextEditResult {
-        guard !query.isEmpty else { return TextEditResult(text: text, selections: []) }
-        let pattern = regex ? query : NSRegularExpression.escapedPattern(for: query)
-        let expression = try NSRegularExpression(pattern: pattern, options: caseSensitive ? [] : [.caseInsensitive])
-        let matches = expression.matches(in: text, range: NSRange(location: 0, length: (text as NSString).length))
-            .filter { range == nil || $0.range == range }
-        let edits = matches.map { match in
-            TextReplacement(range: match.range, text: regex ? expression.replacementString(for: match, in: text, offset: 0, template: replacement) : replacement)
-        }
-        return TextOperations.apply(in: text, edits: edits)
     }
 }

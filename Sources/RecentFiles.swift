@@ -25,6 +25,11 @@ final class RecentFiles {
         if persist { save() }
     }
 
+    func relocate(from source: URL, to destination: URL) {
+        urls = urls.map { ProjectFileOperations.rebase($0, from: source, to: destination) ?? $0 }
+        save()
+    }
+
     func clear() { urls.removeAll(); save() }
 
     private func save() { defaults?.set(urls.map(\.path), forKey: key) }

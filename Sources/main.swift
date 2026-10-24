@@ -24,14 +24,24 @@ if arguments.contains("--self-test") {
 if arguments.contains("--preferences-test") { exit(PreferencesTestRunner.run()) }
 if arguments.contains("--document-settings-test") { exit(DocumentSettingsTestRunner.run()) }
 if arguments.contains("--product-features-test") { exit(ProductFeatureTests.run()) }
+if arguments.contains("--daily-features-test") { exit(DailyFeatureTests.run()) }
 if let flag = arguments.firstIndex(of: "--contract-test"), flag + 1 < arguments.count {
     exit(ContractTestRunner.run(path: arguments[flag + 1]))
 }
 if arguments.contains("--benchmark") { exit(BenchmarkRunner.run()) }
 let application = NSApplication.shared
 application.setActivationPolicy(.regular)
-let delegate = EditorAppDelegate(recentFiles: RecentFiles(defaults: (arguments.contains("--ui-self-test") || arguments.contains("--multi-window-ui-test") || arguments.contains("--performance-test") || arguments.contains("--product-ui-test")) ? nil : .standard))
+let delegate = EditorAppDelegate(recentFiles: RecentFiles(defaults: (arguments.contains("--ui-self-test") || arguments.contains("--multi-window-ui-test") || arguments.contains("--performance-test") || arguments.contains("--product-ui-test") || arguments.contains("--daily-ui-test")) ? nil : .standard))
 application.delegate = delegate
+if arguments.contains("--daily-ui-test") {
+    setbuf(stdout, nil)
+    let path = arguments.first(where: { $0.hasPrefix("--daily-directory=") }).map { String($0.dropFirst("--daily-directory=".count)) } ?? ".build/daily-ui"
+    Timer.scheduledTimer(withTimeInterval: 0.1, repeats: false) { _ in
+        Task { @MainActor in exit(await DailyUITests.run(directory: URL(fileURLWithPath: path).standardizedFileURL.resolvingSymlinksInPath())) }
+    }
+    application.run()
+    exit(1)
+}
 if arguments.contains("--product-ui-test") {
     setbuf(stdout, nil)
     let path = arguments.first(where: { $0.hasPrefix("--product-directory=") }).map { String($0.dropFirst("--product-directory=".count)) } ?? ""
@@ -108,5 +118,5 @@ while index < arguments.count {
     index += 1
 }
 if forwardToRunningEditor(openURLs: openURLs, projectURL: projectURL) { exit(0) }
-delegate.newWindow(openURLs: openURLs, projectURL: projectURL)
+delegate.launch(openURLs: openURLs, projectURL: projectURL)
 application.run()

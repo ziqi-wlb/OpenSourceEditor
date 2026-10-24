@@ -187,7 +187,7 @@ enum LineEnding: String, Codable, CaseIterable {
 }
 
 enum EditorSyntax: String, CaseIterable {
-    case plainText = "plain_text", swift, python, javascript, typescript, json, markdown, html, css, c, cpp, shell, yaml, rust, go, xml, sql
+    case plainText = "plain_text", swift, python, javascript, typescript, json, markdown, html, css, c, cpp, shell, yaml, rust, go, xml, sql, java, ruby, toml
     var displayName: String {
         switch self {
         case .plainText: return "Plain Text"
@@ -214,6 +214,7 @@ enum EditorSyntax: String, CaseIterable {
         case .shell: return "sh"
         case .yaml: return "yml"
         case .rust: return "rs"
+        case .ruby: return "rb"
         default: return rawValue
         }
     }
@@ -366,7 +367,7 @@ extension TextOperations {
             return apply(in: text, edits: edits)
         } catch { return self.error(text, selections, error.localizedDescription) }
     }
-    static func insertNewline(in text: String, selections: [NSRange], settings: DocumentSettings) -> TextEditResult {
+    static func insertNewline(in text: String, selections: [NSRange], settings: DocumentSettings, syntax: EditorSyntax? = nil) -> TextEditResult {
         guard valid(text, selections), settings.tabSize > 0 else { return error(text, selections, "无效选区或 Tab Width。") }
         let string = text as NSString
         do {
@@ -374,7 +375,8 @@ extension TextOperations {
                 let prefix = linePrefix(string, range.location)
                 var indentation = settings.autoIndent ? leading(prefix) : ""
                 let trimmed = prefix.trimmingCharacters(in: .whitespaces)
-                if settings.autoIndent && settings.smartIndent && (trimmed.hasSuffix("{") || trimmed.hasSuffix("[") || trimmed.hasSuffix("(")) {
+                let language = syntax ?? settings.syntax.flatMap(EditorSyntax.resolve)
+                if settings.autoIndent && settings.smartIndent && (language?.shouldIndent(trimmed) ?? (trimmed.hasSuffix("{") || trimmed.hasSuffix("[") || trimmed.hasSuffix("("))) {
                     indentation += settings.translateTabsToSpaces ? try spaces(settings.tabSize) : "\t"
                 }
                 return TextReplacement(range: range, text: settings.lineEnding.text + indentation)

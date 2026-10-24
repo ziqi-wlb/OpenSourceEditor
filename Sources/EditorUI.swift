@@ -37,7 +37,7 @@ private final class ProjectItem: NSObject {
     private var loadedChildren: [ProjectItem]?
 
     init(_ url: URL) {
-        self.url = url
+        self.url = URL(fileURLWithPath: url.path).standardizedFileURL
         self.isDirectory = (try? url.resourceValues(forKeys: [.isDirectoryKey]).isDirectory) == true
     }
 
@@ -58,6 +58,7 @@ private final class ProjectItem: NSObject {
 private final class EditorTextView: NSTextView {
     var onFocus: (() -> Void)?
     var makeContextMenu: (() -> NSMenu?)?
+    var onPasteImage: ((Data) -> Void)?
     weak var document: EditorDocument?
     private var ownedSelections: [NSValue]?
     private var applyingSelections = false
@@ -173,6 +174,10 @@ private final class EditorTextView: NSTextView {
 
     override func paste(_ sender: Any?) {
         guard isEditable else { return }
+        if document?.resolvedSyntax == .markdown, let handler = onPasteImage,
+           let image = NSPasteboard.general.data(forType: .png) ?? NSPasteboard.general.data(forType: .tiff) {
+            handler(image); return
+        }
         guard selectedRanges.count > 1, let text = NSPasteboard.general.string(forType: .string) else {
             super.paste(sender)
             return
@@ -185,9 +190,12 @@ private final class EditorTextView: NSTextView {
     override func insertTab(_ sender: Any?) { insertIndentation(backtab: false) }
     override func insertBacktab(_ sender: Any?) { insertIndentation(backtab: true) }
     override func insertNewline(_ sender: Any?) {
+        if hasMarkedText() { super.insertNewline(sender); return }
         guard let document else { super.insertNewline(sender); return }
-        applyEditorResult(TextOperations.insertNewline(in: string, selections: selectedRanges.map(\.rangeValue),
-                                                       settings: document.settings), name: "Insert Newline")
+        let ranges = selectedRanges.map(\.rangeValue)
+        let result = document.resolvedSyntax == .markdown ? NoteEditing.newline(in: string, selections: ranges, settings: document.settings) :
+            TextOperations.insertNewline(in: string, selections: ranges, settings: document.settings, syntax: document.resolvedSyntax)
+        applyEditorResult(result, name: "Insert Newline")
     }
 
     private func insertIndentation(backtab: Bool) {
@@ -842,6 +850,20 @@ final class EditorWorkspace: NSObject, NSWindowDelegate,
     private var closedFileURLs: [URL] = []
     private let findBar = NSStackView()
     private let replaceRow = NSStackView()
+    private struct FindKey: Equatable {
+        let document: ObjectIdentifier
+        let revision: UInt64
+        let query: String
+        let regex: Bool
+        let caseSensitive: Bool
+    }
+    private let searchWorker = LatestSearchWorker()
+    private var searchDebounce: DispatchWorkItem?
+    private var searchGeneration = 0
+    private var requestedFindKey: FindKey?
+    private var cachedFindKey: FindKey?
+    private var cachedFindRanges: [NSRange] = []
+    private var pendingFindAction: (() -> Void)?
     private let findField = NSSearchField()
     private let replaceField = NSTextField()
     private let regexToggle = NSButton(checkboxWithTitle: ".*", target: nil, action: nil)
@@ -866,6 +888,123 @@ final class EditorWorkspace: NSObject, NSWindowDelegate,
     private var pythonURL = URL(fileURLWithPath: "/usr/bin/python3")
     private var pluginCommand = ""
     private var started = false
+    private var closed = false
+    private var fileMonitor: EditorFileMonitor?
+    private var monitoredPaths: Set<URL> = []
+    private var fileMonitoringEnabled = false
+    private let diskQueue: OperationQueue = {
+        let queue = OperationQueue(); queue.name = "SourceEditor.DiskCheck"; queue.maxConcurrentOperationCount = 1
+        queue.qualityOfService = .utility; return queue
+    }()
+    private var diskChecks: [ObjectIdentifier: DiskCheckOperation] = [:]
+    private var diskChanges: [ObjectIdentifier: String] = [:]
+    private let noticeBar = NSStackView()
+    private let noticeLabel = NSTextField(labelWithString: "")
+    private let noticeButton = NSButton(title: "Review", target: nil, action: nil)
+    private var noticeAction: (() -> Void)?
+    private var noticeKind: String?
+
+    func showNotice(_ message: String, actionTitle: String? = nil, kind: String? = nil, action: (() -> Void)? = nil) {
+        guard !pendingTermination, !pendingWindowClose else { return }
+        noticeLabel.stringValue = message
+        noticeLabel.toolTip = message
+        noticeAction = action
+        noticeKind = kind
+        noticeButton.title = actionTitle ?? "Review"
+        noticeButton.isHidden = action == nil
+        noticeBar.isHidden = false
+        editorArea?.needsLayout = true
+    }
+    @objc private func performNoticeAction() { noticeAction?() }
+    @objc private func findRecoverySnapshots() {
+        let candidates = RecoveryCandidate.discover()
+        if candidates.isEmpty { showNotice("No abandoned recovery snapshots found.") }
+        else {
+            showNotice("\(candidates.count) recovery snapshot(s) available", actionTitle: "Recover…") { [weak self] in self?.showRecoveryCandidates(candidates) }
+            showRecoveryCandidates(candidates)
+        }
+    }
+    @objc private func dismissNotice() {
+        noticeBar.isHidden = true; noticeAction = nil; noticeKind = nil; editorArea?.needsLayout = true
+    }
+
+    func offerRecoverySnapshots(directory: URL = EditorRecovery.defaultDirectory) {
+        let candidates = RecoveryCandidate.discover(in: directory)
+        guard !candidates.isEmpty, noticeBar.isHidden else { return }
+        showNotice("\(candidates.count) recovery snapshot(s) available", actionTitle: "Recover…") { [weak self] in
+            self?.showRecoveryCandidates(candidates)
+        }
+    }
+    private func showRecoveryCandidates(_ candidates: [RecoveryCandidate]) {
+        let menu = NSMenu(title: "Recovery snapshots")
+        menu.autoenablesItems = false
+        for candidate in candidates {
+            let date = DateFormatter.localizedString(from: candidate.modified, dateStyle: .short, timeStyle: .short)
+            let item = actionItem("\(date) · \(ByteCountFormatter.string(fromByteCount: Int64(candidate.bytes), countStyle: .file))") { [weak self] in
+                guard let self else { return }
+                do { _ = try self.restoreRecoverySnapshot(candidate.url) }
+                catch { self.showError(error) }
+            }
+            item.toolTip = candidate.url.path
+            menu.addItem(item)
+        }
+        menu.popUp(positioning: nil, at: NSPoint(x: 0, y: noticeButton.bounds.maxY), in: noticeButton)
+    }
+
+    var desktopSnapshot: SavedWorkspace {
+        if let document = currentDocument, let view = currentTextView { selectionCache[ObjectIdentifier(document)] = view.selectedRanges }
+        let files = documents.compactMap { document -> SavedWorkspace.File? in
+            guard let path = document.fileURL?.path else { return nil }
+            return .init(path: path, settings: document.settings, encoding: document.diskEncoding,
+                selections: Array((selectionCache[ObjectIdentifier(document)]?.map { [$0.rangeValue.location, $0.rangeValue.length] } ?? [[0, 0]]).prefix(4096)),
+                markdownMode: String(describing: markdownModeCache[ObjectIdentifier(document)] ?? .edit))
+        }
+        let rect = window.frame
+        return .init(files: files, selectedPath: currentDocument?.fileURL?.path, projectPath: projectRoot?.url.path,
+            split: splitEnabled, sidebarVisible: projectSplit.arrangedSubviews.first?.isHidden == false,
+            frame: [Double(rect.origin.x), Double(rect.origin.y), Double(rect.width), Double(rect.height)],
+            scrollY: Double(currentTextView?.enclosingScrollView?.contentView.bounds.origin.y ?? 0))
+    }
+
+    func restoreDesktop(_ saved: SavedWorkspace) {
+        var restored: [EditorDocument] = []
+        var failures: [String] = []
+        for file in saved.files {
+            do {
+                let document = try EditorDocument.open(URL(fileURLWithPath: file.path), encoding: file.encoding, settings: file.settings)
+                restored.append(document)
+                let ranges = file.selections.compactMap { pair -> NSValue? in
+                    guard pair.count == 2, pair[0] >= 0, pair[1] >= 0, pair[0] <= document.storage.length,
+                          pair[1] <= document.storage.length - pair[0] else { return nil }
+                    let range = NSRange(location: pair[0], length: pair[1])
+                    guard Range(range, in: document.storage.string) != nil else { return nil }
+                    return NSValue(range: range)
+                }
+                selectionCache[ObjectIdentifier(document)] = ranges.isEmpty ? [NSValue(range: NSRange(location: 0, length: 0))] : ranges
+                markdownModeCache[ObjectIdentifier(document)] = file.markdownMode == "preview" ? .preview : file.markdownMode == "sideBySide" ? .sideBySide : .edit
+                noteRecentFile(document.fileURL!)
+            } catch { failures.append(URL(fileURLWithPath: file.path).lastPathComponent + ": " + error.localizedDescription) }
+        }
+        if !restored.isEmpty {
+            for view in editorSplit.arrangedSubviews { editorSplit.removeArrangedSubview(view); view.removeFromSuperview() }
+            panes.removeAll()
+            documents = restored
+            selectedIndex = restored.firstIndex { $0.fileURL?.path == saved.selectedPath } ?? 0
+            splitEnabled = saved.split
+            rebuildPanes(); rebuildTabs()
+        }
+        if let path = saved.projectPath, FileManager.default.fileExists(atPath: path) { setProject(URL(fileURLWithPath: path, isDirectory: true)) }
+        projectSplit.arrangedSubviews.first?.isHidden = !saved.sidebarVisible
+        if saved.frame.count == 4 {
+            let rect = NSRect(x: saved.frame[0], y: saved.frame[1], width: max(760, min(10000, saved.frame[2])), height: max(420, min(10000, saved.frame[3])))
+            if NSScreen.screens.contains(where: { $0.visibleFrame.intersects(rect) }) { window.setFrame(rect, display: true) }
+        }
+        window.contentView?.layoutSubtreeIfNeeded()
+        if let view = currentTextView { view.scroll(NSPoint(x: 0, y: min(CGFloat(saved.scrollY), max(0, view.bounds.height - (view.enclosingScrollView?.contentSize.height ?? 0))))) }
+        updateStatus()
+        refreshFileMonitor()
+        if !failures.isEmpty { showNotice("Some files could not be restored: " + failures.joined(separator: "; ")) }
+    }
 
     init(recentFiles: RecentFiles = RecentFiles(), fileChooser: EditorFileChoosing = NativeEditorFileChooser()) {
         self.recentFiles = recentFiles
@@ -901,7 +1040,146 @@ final class EditorWorkspace: NSObject, NSWindowDelegate,
         window.makeFirstResponder(currentTextView)
         #if !EDITOR_TESTS
         if UserDefaults.standard.bool(forKey: "autoRecovery") { setAutoRecovery(true) }
+        startFileMonitoring()
         #endif
+    }
+
+    func startFileMonitoring() { fileMonitoringEnabled = true; refreshFileMonitor() }
+    private func refreshFileMonitor() {
+        guard fileMonitoringEnabled, !closed, !pendingTermination, !pendingWindowClose else { return }
+        let paths = Set((projectRoot.map { [$0.url] } ?? []) + documents.compactMap { $0.fileURL?.deletingLastPathComponent() })
+        guard paths != monitoredPaths else { return }
+        fileMonitor?.stop(); monitoredPaths = paths
+        fileMonitor = EditorFileMonitor(paths: Array(paths)) { [weak self] urls in self?.filesChanged(urls) }
+    }
+    private func filesChanged(_ urls: [URL]) {
+        guard !closed, !pendingTermination, !pendingWindowClose else { return }
+        for document in documents {
+            guard let url = document.fileURL, urls.contains(where: { url.path == $0.path || url.path.hasPrefix($0.path + "/") }) else { continue }
+            let identity = ObjectIdentifier(document), revision = document.revision
+            diskChecks[identity]?.cancel()
+            let work = DiskCheckOperation(url: url, digest: document.diskDigestHex, encoding: document.diskEncoding)
+            diskChecks[identity] = work
+            work.completionBlock = { [weak self, weak document, weak work] in
+                guard let work, !work.isCancelled else { return }
+                let result = work.result
+                DispatchQueue.main.async {
+                    guard let self, let document, !self.closed, !self.pendingTermination, !self.pendingWindowClose,
+                          self.documents.contains(where: { $0 === document }), document.fileURL == url,
+                          self.diskChecks[identity] === work else { return }
+                    self.diskChecks.removeValue(forKey: identity)
+                    switch result {
+                    case .unchanged: self.diskChanges.removeValue(forKey: identity)
+                    case .changed(let text, let encoding, let digest):
+                        if !document.isModified, document.revision == revision, document.diskDigestHex == work.digest {
+                            document.acceptExternalText(text, encoding: encoding, digest: digest)
+                            self.clampSelections(document)
+                            self.diskChanges.removeValue(forKey: identity)
+                        } else { self.diskChanges[identity] = "\(document.displayName) changed on disk; your unsaved text is preserved." }
+                    case .missing: self.diskChanges[identity] = "\(document.displayName) was moved or deleted. Use Save As to keep your buffer."
+                    case .unavailable(let reason): self.diskChanges[identity] = "Cannot check \(document.displayName): " + reason
+                    }
+                    self.updateStatus()
+                    if !self.diskChanges.isEmpty {
+                        self.showNotice(self.diskChanges.values.sorted().joined(separator: " · "), actionTitle: "Review…", kind: "disk") { [weak self] in self?.reviewDiskChange() }
+                    } else if self.noticeKind == "disk" { self.dismissNotice() }
+                }
+            }
+            diskQueue.addOperation(work)
+        }
+        if let root = projectRoot?.url, urls.contains(where: { url in
+            (url.path == root.path || url.path.hasPrefix(root.path + "/")) &&
+                !url.pathComponents.dropFirst(root.pathComponents.count).contains(where: { [".git", ".build", "node_modules", "__pycache__"].contains($0) })
+        }) { refreshProject() }
+    }
+    private func clampSelections(_ document: EditorDocument) {
+        func valid(_ ranges: [NSValue]) -> [NSValue] {
+            let values = ranges.filter { let range = $0.rangeValue; return range.location <= document.storage.length && range.length <= document.storage.length - range.location && Range(range, in: document.storage.string) != nil }
+            return values.isEmpty ? [NSValue(range: NSRange(location: 0, length: 0))] : values
+        }
+        let identity = ObjectIdentifier(document)
+        selectionCache[identity] = valid(selectionCache[identity] ?? [])
+        for pane in panes where pane.document === document { pane.textView.selectedRanges = valid(pane.textView.selectedRanges) }
+    }
+    private func reviewDiskChange() {
+        guard let document = documents.first(where: { diskChanges[ObjectIdentifier($0)] != nil }),
+              let index = documents.firstIndex(where: { $0 === document }) else { return }
+        selectDocument(index)
+        let alert = NSAlert()
+        alert.messageText = "External file change"
+        alert.informativeText = diskChanges[ObjectIdentifier(document)] ?? ""
+        alert.addButton(withTitle: "Keep Buffer")
+        alert.addButton(withTitle: "Reload from Disk…")
+        let cancel = EditorDialogs.addCancelButton(to: alert)
+        if runDialog(alert, cancelButton: cancel) == .alertSecondButtonReturn, revertCurrentDocument() {
+            diskChanges.removeValue(forKey: ObjectIdentifier(document))
+            dismissNotice()
+        }
+    }
+
+    private func refreshProject() {
+        guard let root = projectRoot?.url else { return }
+        let expanded = Set((0..<outline.numberOfRows).compactMap { row -> String? in
+            guard let item = outline.item(atRow: row) as? ProjectItem, outline.isItemExpanded(item) else { return nil }
+            return item.url.path
+        })
+        let selected = outline.selectedRow >= 0 ? (outline.item(atRow: outline.selectedRow) as? ProjectItem)?.url : nil
+        setProject(root)
+        func expand(_ node: ProjectItem) {
+            guard expanded.contains(node.url.path) else { return }
+            outline.expandItem(node)
+            for child in node.children where child.isDirectory { expand(child) }
+        }
+        if let projectRoot { expand(projectRoot) }
+        if let selected, let row = (0..<outline.numberOfRows).first(where: { (outline.item(atRow: $0) as? ProjectItem)?.url == selected }) {
+            outline.selectRowIndexes(IndexSet(integer: row), byExtendingSelection: false)
+        }
+    }
+
+    @discardableResult
+    func createProjectItem(in parent: URL, name: String, directory: Bool) throws -> URL {
+        guard let root = projectRoot?.url else { throw EditorFailure.invalidEdit("Open a project folder first.") }
+        let target = try ProjectFileOperations(root: root).create(in: parent, name: name, directory: directory)
+        refreshProject()
+        if !directory { openDocument(target) }
+        return target
+    }
+    func moveProjectItem(_ source: URL, to destination: URL) throws {
+        guard let root = projectRoot?.url else { throw EditorFailure.invalidEdit("Open a project folder first.") }
+        let workspaces = applicationOwner?.workspaces ?? [self]
+        let affected = workspaces.flatMap(\.documents).compactMap { document -> (EditorDocument, URL)? in
+            guard let url = document.fileURL, let next = ProjectFileOperations.rebase(url, from: source, to: destination) else { return nil }
+            return (document, next)
+        }
+        guard !affected.contains(where: { entry in workspaces.flatMap(\.documents).contains(where: { other in other !== entry.0 && other.fileURL == entry.1 && !affected.contains(where: { $0.0 === other }) }) }) else {
+            throw EditorFailure.invalidEdit("The destination is already open in another buffer.")
+        }
+        _ = try ProjectFileOperations(root: root).move(source, to: destination)
+        for (document, next) in affected { document.relocate(to: next) }
+        recentFiles.relocate(from: source, to: destination)
+        for workspace in workspaces {
+            if let old = workspace.projectRoot?.url, let next = ProjectFileOperations.rebase(old, from: source, to: destination) { workspace.setProject(next) }
+            else { workspace.refreshProject() }
+            workspace.refreshFileMonitor(); workspace.rebuildTabs()
+        }
+    }
+    @discardableResult func trashProjectItem(_ source: URL) throws -> URL? {
+        guard let root = projectRoot?.url else { throw EditorFailure.invalidEdit("Open a project folder first.") }
+        let workspaces = applicationOwner?.workspaces ?? [self]
+        let affected = workspaces.flatMap(\.documents).filter { $0.fileURL.flatMap { ProjectFileOperations.rebase($0, from: source, to: source) } != nil }
+        let trashed = try ProjectFileOperations(root: root).trash(source)
+        for document in affected { document.detachAfterTrash() }
+        for workspace in workspaces { workspace.refreshProject(); workspace.refreshFileMonitor(); workspace.rebuildTabs() }
+        return trashed
+    }
+
+    private func promptProjectName(title: String, initial: String) -> String? {
+        let alert = NSAlert(); alert.messageText = title
+        let field = NSTextField(frame: NSRect(x: 0, y: 0, width: 360, height: 26)); field.stringValue = initial
+        alert.accessoryView = field
+        let submit = alert.addButton(withTitle: "Continue"), cancel = EditorDialogs.addCancelButton(to: alert)
+        configureAlertInputs([field], firstResponder: field, submitButton: submit, alert: alert)
+        return runDialog(alert, cancelButton: cancel) == .alertFirstButtonReturn ? field.stringValue : nil
     }
 
     var hasRunningWork: Bool { isBuildRunning || isPluginRunning || recovery != nil }
@@ -942,6 +1220,9 @@ final class EditorWorkspace: NSObject, NSWindowDelegate,
     }
 
     func windowWillClose(_ notification: Notification) {
+        closed = true
+        searchDebounce?.cancel(); searchWorker.cancel(); pendingFindAction = nil
+        fileMonitor?.stop(); fileMonitor = nil; diskQueue.cancelAllOperations(); diskChecks.removeAll()
         palette?.dismiss()
         releaseMarkdownPreview()
         projectIndexWork?.cancel()
@@ -1029,6 +1310,7 @@ final class EditorWorkspace: NSObject, NSWindowDelegate,
         recoveryMenuItem?.target = self
         recoveryMenu.addItem(recoveryMenuItem!)
         item(recoveryMenu, "Recover Snapshot in New Window…", #selector(recoverSnapshot))
+        item(recoveryMenu, "Find Recovery Snapshots…", #selector(findRecoverySnapshots))
         item(recoveryMenu, "Show Recovery Folder", #selector(revealRecoveryFolder))
         let recoveryItem = NSMenuItem(title: "Recovery", action: nil, keyEquivalent: "")
         recoveryItem.submenu = recoveryMenu
@@ -1095,6 +1377,18 @@ final class EditorWorkspace: NSObject, NSWindowDelegate,
         item(view, "Next Tab", #selector(nextTab), "]", [.command, .shift])
         item(view, "Previous Tab", #selector(previousTab), "[", [.command, .shift])
         let tools = menu("Tools")
+        let notes = menu("Notes")
+        for template in NoteTemplate.allCases {
+            notes.addItem(actionItem("New " + template.title) { [weak self] in self?.newNote(template) })
+        }
+        notes.addItem(.separator())
+        item(notes, "Toggle Task", #selector(toggleNoteTask), "\r", [.command, .shift])
+        item(notes, "Bold", #selector(noteBold), "b", [.command, .shift])
+        item(notes, "Italic", #selector(noteItalic), "i")
+        item(notes, "Inline Code", #selector(noteCode))
+        item(notes, "Code Block", #selector(noteCodeBlock))
+        item(notes, "Link", #selector(noteLink))
+        item(notes, "Insert Date and Time", #selector(insertTimestamp))
         item(tools, "Run Build", #selector(runBuildAction), "b")
         item(tools, "Cancel Build", #selector(cancelBuild), ".", [.command, .control])
         item(tools, "Choose Build Configuration…", #selector(chooseBuild))
@@ -1213,7 +1507,16 @@ final class EditorWorkspace: NSObject, NSWindowDelegate,
         status.style(foreground: EditorTheme.muted, background: EditorTheme.panel)
         makeMarkdownBar()
         makeFindBar()
-        for view in [tabScroll, markdownBar, findBar, workSplit, status] {
+        noticeBar.orientation = .horizontal
+        noticeBar.spacing = 8
+        noticeBar.isHidden = true
+        noticeLabel.font = NSFont.systemFont(ofSize: 11)
+        noticeLabel.lineBreakMode = .byTruncatingTail
+        noticeLabel.setContentCompressionResistancePriority(.defaultLow, for: .horizontal)
+        noticeButton.target = self; noticeButton.action = #selector(performNoticeAction)
+        let dismiss = NSButton(title: "×", target: self, action: #selector(dismissNotice))
+        for view in [noticeLabel, noticeButton, dismiss] { noticeBar.addArrangedSubview(view) }
+        for view in [tabScroll, noticeBar, markdownBar, findBar, workSplit, status] {
             view.translatesAutoresizingMaskIntoConstraints = true
             view.autoresizingMask = []
             editorArea.addSubview(view)
@@ -1221,11 +1524,13 @@ final class EditorWorkspace: NSObject, NSWindowDelegate,
         editorArea.arrange = { [weak self, weak tabScroll] size in
             guard let self, let tabScroll else { return }
             tabScroll.frame = NSRect(x: 0, y: 0, width: size.width, height: 40)
+            let noticeHeight: CGFloat = self.noticeBar.isHidden ? 0 : 28
+            self.noticeBar.frame = NSRect(x: 10, y: 40, width: max(1, size.width - 20), height: noticeHeight)
             let markdownHeight: CGFloat = self.markdownBar.isHidden ? 0 : 34
-            self.markdownBar.frame = NSRect(x: 10, y: 40, width: max(1, size.width - 20), height: markdownHeight)
+            self.markdownBar.frame = NSRect(x: 10, y: 40 + noticeHeight, width: max(1, size.width - 20), height: markdownHeight)
             let searchHeight: CGFloat = self.findBar.isHidden ? 0 : self.replaceRow.isHidden ? 32 : 66
-            self.findBar.frame = NSRect(x: 10, y: 42 + markdownHeight, width: max(1, size.width - 20), height: searchHeight)
-            let top = 44 + markdownHeight + searchHeight
+            self.findBar.frame = NSRect(x: 10, y: 42 + noticeHeight + markdownHeight, width: max(1, size.width - 20), height: searchHeight)
+            let top = 44 + noticeHeight + markdownHeight + searchHeight
             let footer: CGFloat = 31
             let workFrame = NSRect(x: 0, y: top, width: size.width, height: max(1, size.height - top - footer))
             if self.workSplit.frame != workFrame { self.workSplit.frame = workFrame; self.workSplit.needsLayout = true }
@@ -1536,6 +1841,8 @@ final class EditorWorkspace: NSObject, NSWindowDelegate,
     }
 
     private func freezeForClose() {
+        searchDebounce?.cancel(); searchWorker.cancel(); pendingFindAction = nil
+        fileMonitor?.stop(); fileMonitor = nil; diskQueue.cancelAllOperations(); diskChecks.removeAll()
         finishRecovery()
         markdownPreview?.stop()
         projectIndexWork?.cancel()
@@ -1677,6 +1984,9 @@ final class EditorWorkspace: NSObject, NSWindowDelegate,
         case #selector(cancelBuild): return isBuildRunning
         case #selector(runBuildAction), #selector(chooseBuild): return !isBuildRunning
         case #selector(runPluginAction), #selector(choosePlugin), #selector(choosePython): return !isPluginRunning
+        case #selector(toggleNoteTask), #selector(noteBold), #selector(noteItalic), #selector(noteCode), #selector(noteCodeBlock), #selector(noteLink):
+            return markdownViewMode != .preview && currentDocument?.resolvedSyntax == .markdown && currentTextView?.hasMarkedText() == false
+        case #selector(insertTimestamp): return markdownViewMode != .preview && currentTextView?.hasMarkedText() == false
         case #selector(saveAll): return documents.contains(where: \.isModified)
         case #selector(toggleComment): return markdownViewMode != .preview && currentDocument.map { !["txt", "json"].contains($0.syntaxIdentifier) } == true
         case #selector(duplicateLines), #selector(deleteLines), #selector(moveLinesUp), #selector(moveLinesDown): return markdownViewMode != .preview && currentDocument != nil
@@ -1695,6 +2005,7 @@ final class EditorWorkspace: NSObject, NSWindowDelegate,
     private func addDocument(_ document: EditorDocument) {
         documents.append(document)
         selectDocument(documents.count - 1)
+        refreshFileMonitor()
         if projectRoot == nil { outline.reloadData() }
     }
 
@@ -1749,6 +2060,7 @@ final class EditorWorkspace: NSObject, NSWindowDelegate,
                 guard let text else { return nil }
                 return self?.editorContextMenu(text)
             }
+            pane.textView.onPasteImage = { [weak self] data in self?.insertNoteImage(data) }
             panes.append(pane)
             pane.applyConfiguration(configuration ?? EditorConfiguration())
             editorSplit.addArrangedSubview(pane.scroll)
@@ -2052,6 +2364,7 @@ final class EditorWorkspace: NSObject, NSWindowDelegate,
     }
 
     func setProject(_ url: URL) {
+        let url = url.absoluteURL.standardizedFileURL.resolvingSymlinksInPath()
         if projectDocument?.folderURL != url { projectDocument = nil }
         projectRoot = ProjectItem(url)
         projectLabel.stringValue = url.lastPathComponent.uppercased()
@@ -2077,6 +2390,7 @@ final class EditorWorkspace: NSObject, NSWindowDelegate,
         }
         projectIndexWork = work
         DispatchQueue.global(qos: .userInitiated).async { work.start() }
+        refreshFileMonitor()
     }
 
     func outlineView(_ outlineView: NSOutlineView, numberOfChildrenOfItem item: Any?) -> Int {
@@ -2330,6 +2644,7 @@ final class EditorWorkspace: NSObject, NSWindowDelegate,
         outline.reloadData()
         updateStatus()
         window.makeFirstResponder(currentTextView)
+        refreshFileMonitor()
         return true
     }
 
@@ -2359,7 +2674,7 @@ final class EditorWorkspace: NSObject, NSWindowDelegate,
         var target: URL?
         if saveAs || document.fileURL == nil {
             let panel = NSSavePanel()
-            panel.nameFieldStringValue = document.displayName == "Untitled" ? "untitled.txt" : document.displayName
+            panel.nameFieldStringValue = document.displayName == "Untitled" ? "untitled." + (document.resolvedSyntax?.identifier ?? "txt") : document.displayName
             panel.directoryURL = document.fileURL?.deletingLastPathComponent() ?? projectRoot?.url
             guard let url = chooseFiles(panel)?.first else { return false }
             target = url
@@ -2368,7 +2683,10 @@ final class EditorWorkspace: NSObject, NSWindowDelegate,
             // NSSavePanel already obtains explicit replacement approval for a chosen
             // existing destination. Current-file conflict checks remain in the core.
             try document.save(to: target, allowOverwrite: target != nil)
+            diskChanges.removeValue(forKey: ObjectIdentifier(document))
+            if diskChanges.isEmpty, noticeKind == "disk" { dismissNotice() }
             if let url = document.fileURL { noteRecentFile(url) }
+            refreshFileMonitor()
             rebuildTabs()
             for pane in panes { pane.scheduleHighlight() }
             updateStatus()
@@ -2501,7 +2819,11 @@ final class EditorWorkspace: NSObject, NSWindowDelegate,
         }
         selectionCache.removeValue(forKey: ObjectIdentifier(documents[index]))
         markdownModeCache.removeValue(forKey: ObjectIdentifier(documents[index]))
+        let closedIdentity = ObjectIdentifier(documents[index])
         documents.remove(at: index)
+        diskChecks.removeValue(forKey: closedIdentity)?.cancel()
+        diskChanges.removeValue(forKey: closedIdentity)
+        refreshFileMonitor()
         if documents.isEmpty { addDocument(EditorDocument(settings: documentDefaults)) }
         else { selectDocument(min(documents.count - 1, index < oldSelected ? oldSelected - 1 : oldSelected)) }
         if projectRoot == nil { outline.reloadData() }
@@ -2699,9 +3021,44 @@ final class EditorWorkspace: NSObject, NSWindowDelegate,
         }
         appendPathItems(to: menu, url: node.url)
         menu.addItem(.separator())
+        let parent = node.isDirectory ? node.url : node.url.deletingLastPathComponent()
+        for (title, folder) in [("New File…", false), ("New Folder…", true)] {
+            menu.addItem(actionItem(title) { [weak self] in
+                guard let self, let name = self.promptProjectName(title: title, initial: folder ? "New Folder" : "untitled.md") else { return }
+                do { _ = try self.createProjectItem(in: parent, name: name, directory: folder) }
+                catch { self.showError(error) }
+            })
+        }
+        if node !== projectRoot {
+            menu.addItem(actionItem("Rename…") { [weak self] in
+                guard let self, let name = self.promptProjectName(title: "Rename", initial: node.url.lastPathComponent) else { return }
+                do {
+                    try ProjectFileOperations.validateName(name)
+                    try self.moveProjectItem(node.url, to: node.url.deletingLastPathComponent().appendingPathComponent(name))
+                } catch { self.showError(error) }
+            })
+            menu.addItem(actionItem("Move to Folder…") { [weak self] in
+                guard let self else { return }
+                let panel = NSOpenPanel(); panel.canChooseFiles = false; panel.canChooseDirectories = true
+                panel.directoryURL = self.projectRoot?.url
+                guard let folder = self.chooseFiles(panel)?.first else { return }
+                do { try self.moveProjectItem(node.url, to: folder.appendingPathComponent(node.url.lastPathComponent)) }
+                catch { self.showError(error) }
+            })
+            menu.addItem(actionItem("Move to Trash…") { [weak self] in
+                guard let self else { return }
+                let alert = NSAlert(); alert.messageText = "Move “\(node.url.lastPathComponent)” to Trash?"
+                alert.informativeText = "Open buffers inside this item will remain in the editor as untitled documents."
+                let cancel = EditorDialogs.addCancelButton(to: alert); cancel.keyEquivalent = "\r"
+                alert.window.defaultButtonCell = cancel.cell as? NSButtonCell
+                alert.addButton(withTitle: "Move to Trash")
+                guard self.runDialog(alert, cancelButton: cancel) == .alertSecondButtonReturn else { return }
+                do { try self.trashProjectItem(node.url) } catch { self.showError(error) }
+            })
+        }
+        menu.addItem(.separator())
         menu.addItem(actionItem("Refresh Folders") { [weak self] in
-            guard let self, let root = self.projectRoot?.url else { return }
-            self.setProject(root)
+            self?.refreshProject()
         })
         #if EDITOR_TESTS
         lastContextMenu = menu
@@ -2908,14 +3265,8 @@ final class EditorWorkspace: NSObject, NSWindowDelegate,
             showError(EditorFailure.invalidEdit(error))
             return
         }
-        guard let text = currentTextView else { return }
-        let full = NSRange(location: 0, length: (text.string as NSString).length)
-        guard result.text != text.string, text.shouldChangeText(in: full, replacementString: result.text) else { return }
-        text.undoManager?.beginUndoGrouping()
-        text.insertText(result.text, replacementRange: full)
-        text.selectedRanges = result.selections.map { NSValue(range: $0) }
-        text.undoManager?.setActionName(name)
-        text.undoManager?.endUndoGrouping()
+        guard let text = currentTextView as? EditorTextView else { return }
+        text.applyEditorResult(result, name: name)
     }
 
     private func sort(caseSensitive: Bool = false, reverse: Bool = false, unique: Bool = false) {
@@ -2961,6 +3312,17 @@ final class EditorWorkspace: NSObject, NSWindowDelegate,
             ("Markdown: Preview to the Side", "⌥⌘V", { [weak self] in self?.markdownToSide() }),
             ("Markdown: Document Outline", "Headings and source navigation", { [weak self] in self?.showMarkdownOutline() }),
             ("Markdown: Export HTML", "Standalone rendered document", { [weak self] in self?.exportMarkdown() }),
+            ("Notes: New Markdown", "Blank note", { [weak self] in self?.newNote(.blank) }),
+            ("Notes: Meeting Template", "Agenda, decisions and action items", { [weak self] in self?.newNote(.meeting) }),
+            ("Notes: Daily Template", "Progress and next steps", { [weak self] in self?.newNote(.daily) }),
+            ("Notes: Task Template", "To do and completed", { [weak self] in self?.newNote(.tasks) }),
+            ("Notes: Toggle Task", "⇧⌘Return", { [weak self] in self?.toggleNoteTask() }),
+            ("Notes: Bold", "⇧⌘B", { [weak self] in self?.noteBold() }),
+            ("Notes: Italic", "⌘I", { [weak self] in self?.noteItalic() }),
+            ("Notes: Inline Code", "Wrap current selections", { [weak self] in self?.noteCode() }),
+            ("Notes: Code Block", "Wrap current selections", { [weak self] in self?.noteCodeBlock() }),
+            ("Notes: Link", "Wrap current selections", { [weak self] in self?.noteLink() }),
+            ("Notes: Date and Time", "Current local time", { [weak self] in self?.insertTimestamp() }),
             ("View: Toggle Sidebar", "⌃⌘B", { [weak self] in self?.toggleSidebar() }),
             ("View: Toggle Output", "", { [weak self] in self?.toggleOutput() }),
             ("Build: Run", "⌘B", { [weak self] in self?.runBuildAction() }),
@@ -3077,62 +3439,112 @@ final class EditorWorkspace: NSObject, NSWindowDelegate,
     @objc private func showReplace() { enableFind(replace: true) }
     @objc private func hideFind() { findBar.isHidden = true; editorArea.needsLayout = true; window.makeFirstResponder(currentTextView) }
 
-    private func searchMatches() -> [NSRange]? {
-        guard let text = currentTextView else { return nil }
-        do {
-            guard !findField.stringValue.isEmpty else { findMessage.stringValue = ""; return nil }
-            let matches = try SearchEngine.find(in: text.string, query: findField.stringValue,
-                                                regex: regexToggle.state == .on, caseSensitive: caseToggle.state == .on)
-            findMessage.stringValue = "\(matches.count) matches"
-            return matches
-        } catch {
-            findMessage.stringValue = "Invalid regex"
-            findMessage.toolTip = error.localizedDescription
-            return nil
+    private var findKey: FindKey? {
+        guard let document = currentDocument else { return nil }
+        return FindKey(document: ObjectIdentifier(document), revision: document.revision,
+            query: findField.stringValue, regex: regexToggle.state == .on, caseSensitive: caseToggle.state == .on)
+    }
+    private func requestFind(immediate: Bool = false, action: (() -> Void)? = nil) {
+        guard !closed, !pendingTermination, !pendingWindowClose, let key = findKey else { return }
+        guard !key.query.isEmpty else {
+            searchDebounce?.cancel(); searchWorker.cancel(); searchGeneration += 1
+            requestedFindKey = nil; cachedFindKey = nil; cachedFindRanges = []; pendingFindAction = nil
+            findMessage.stringValue = ""; return
+        }
+        if cachedFindKey == key { action?(); return }
+        if requestedFindKey == key {
+            if let action { pendingFindAction = action }
+            if immediate, searchDebounce != nil { searchDebounce?.cancel(); searchDebounce = nil; launchFind(key, generation: searchGeneration) }
+            return
+        }
+        searchDebounce?.cancel(); searchWorker.cancel(); searchGeneration += 1
+        requestedFindKey = key; cachedFindKey = nil; cachedFindRanges = []; pendingFindAction = action
+        findMessage.stringValue = "Searching…"; findMessage.toolTip = nil
+        let generation = searchGeneration
+        if immediate { searchDebounce = nil; launchFind(key, generation: generation) }
+        else {
+            let work = DispatchWorkItem { [weak self] in
+                guard let self, self.searchGeneration == generation else { return }
+                self.searchDebounce = nil; self.launchFind(key, generation: generation)
+            }
+            searchDebounce = work
+            DispatchQueue.main.asyncAfter(deadline: .now() + 0.15, execute: work)
         }
     }
-
-    private func updateFindCount() { if !findBar.isHidden { _ = searchMatches() } }
+    private func launchFind(_ key: FindKey, generation: Int) {
+        guard findKey == key, let text = currentTextView?.string else { return }
+        searchWorker.submit(SearchOperation { [weak self] operation in
+            let outcome = Result { try SearchEngine.scan(in: text, query: key.query, regex: key.regex,
+                caseSensitive: key.caseSensitive, isCancelled: { operation.isCancelled }) }
+            guard !operation.isCancelled else { return }
+            DispatchQueue.main.async { [weak self] in
+                guard let self, !self.closed, self.searchGeneration == generation, self.findKey == key else { return }
+                self.requestedFindKey = nil
+                switch outcome {
+                case .success(let result):
+                    self.cachedFindKey = key; self.cachedFindRanges = result.ranges
+                    self.findMessage.stringValue = "\(result.matches.count) matches" + (result.limit.map { " · Partial: " + $0 } ?? "")
+                    self.findMessage.toolTip = result.limit
+                    let action = self.pendingFindAction; self.pendingFindAction = nil; action?()
+                case .failure(let error):
+                    self.pendingFindAction = nil
+                    self.findMessage.stringValue = error.localizedDescription
+                    self.findMessage.toolTip = error.localizedDescription
+                }
+            }
+        })
+    }
+    private func updateFindCount() { if !findBar.isHidden { requestFind() } }
     func controlTextDidChange(_ obj: Notification) { updateFindCount() }
     @objc private func searchOptionsChanged() { updateFindCount() }
 
     private func find(backward: Bool) {
-        guard let text = currentTextView, let matches = searchMatches(), !matches.isEmpty else { NSSound.beep(); return }
-        let selection = text.selectedRange()
-        let match: NSRange
-        if backward {
-            match = matches.last(where: { $0.location < selection.location }) ?? matches.last!
-        } else {
-            let start = NSMaxRange(selection) + (selection.length == 0 ? 1 : 0)
-            match = matches.first(where: { $0.location >= start }) ?? matches.first!
+        requestFind(immediate: true) { [weak self] in
+            guard let self, let text = self.currentTextView, !self.cachedFindRanges.isEmpty else { NSSound.beep(); return }
+            let selection = text.selectedRange(), matches = self.cachedFindRanges
+            let match: NSRange
+            if backward { match = matches.last(where: { $0.location < selection.location }) ?? matches.last! }
+            else {
+                let start = NSMaxRange(selection) + (selection.length == 0 ? 1 : 0)
+                match = matches.first(where: { $0.location >= start }) ?? matches.first!
+            }
+            text.setSelectedRange(match); text.scrollRangeToVisible(match); self.updateStatus()
         }
-        text.setSelectedRange(match)
-        text.scrollRangeToVisible(match)
-        updateStatus()
     }
     @objc private func findNext() { find(backward: false) }
     @objc private func findPrevious() { find(backward: true) }
 
     @objc private func replaceOne() {
-        guard let text = currentTextView, let matches = searchMatches() else { return }
-        guard let match = matches.first(where: { $0 == text.selectedRange() }) else { findNext(); return }
-        do {
-            let result = try SearchEngine.replacing(in: text.string, query: findField.stringValue,
-                replacement: replaceField.stringValue, regex: regexToggle.state == .on,
-                caseSensitive: caseToggle.state == .on, range: match)
-            replaceText(result, name: "Replace")
-            findNext()
-        } catch { showError(error) }
+        requestFind(immediate: true) { [weak self] in
+            guard let self, let text = self.currentTextView else { return }
+            guard let match = self.cachedFindRanges.first(where: { $0 == text.selectedRange() }) else { self.findNext(); return }
+            self.replaceSearch(range: match)
+        }
     }
-
-    @objc private func replaceAll() {
-        guard let text = currentTextView else { return }
-        do {
-            let result = try SearchEngine.replacing(in: text.string, query: findField.stringValue,
-                replacement: replaceField.stringValue, regex: regexToggle.state == .on, caseSensitive: caseToggle.state == .on)
-            replaceText(result, name: "Replace All")
-            updateFindCount()
-        } catch { showError(error) }
+    @objc private func replaceAll() { replaceSearch(range: nil) }
+    private func replaceSearch(range: NSRange?) {
+        guard !closed, !pendingTermination, !pendingWindowClose, let key = findKey, !key.query.isEmpty,
+              let text = currentTextView?.string else { return }
+        let replacement = replaceField.stringValue
+        searchDebounce?.cancel(); searchDebounce = nil; searchWorker.cancel(); searchGeneration += 1
+        let generation = searchGeneration
+        requestedFindKey = nil; pendingFindAction = nil
+        findMessage.stringValue = "Replacing…"
+        searchWorker.submit(SearchOperation { [weak self] operation in
+            let outcome = Result { try SearchEngine.replacing(in: text, query: key.query, replacement: replacement,
+                regex: key.regex, caseSensitive: key.caseSensitive, range: range, isCancelled: { operation.isCancelled }) }
+            guard !operation.isCancelled else { return }
+            DispatchQueue.main.async { [weak self] in
+                guard let self, !self.closed, self.searchGeneration == generation else { return }
+                guard self.findKey == key else { self.findMessage.stringValue = "File/query changed; replacement was not applied."; return }
+                switch outcome {
+                case .success(let result):
+                    self.replaceText(result, name: range == nil ? "Replace All" : "Replace")
+                    if range != nil { self.findNext() } else { self.updateFindCount() }
+                case .failure(let error): self.findMessage.stringValue = error.localizedDescription; self.findMessage.toolTip = error.localizedDescription
+                }
+            }
+        })
     }
 
     private func occurrenceSelection() -> (NSTextView, NSString, NSRange)? {
@@ -3176,6 +3588,46 @@ final class EditorWorkspace: NSObject, NSWindowDelegate,
     }
 
     // A small public-to-the-module surface supports executable GUI smoke checks.
+    func newNote(_ template: NoteTemplate) {
+        var settings = documentDefaults; settings.syntax = "markdown"
+        let document = EditorDocument(settings: settings)
+        document.setTextUndoably(template.text(), actionName: "Note Template")
+        addDocument(document)
+    }
+    @objc private func toggleNoteTask() {
+        guard markdownViewMode != .preview, let document = currentDocument, document.resolvedSyntax == .markdown, let view = currentTextView,
+              !view.hasMarkedText() else { NSSound.beep(); return }
+        replaceText(NoteEditing.toggleTasks(in: document.storage.string, selections: view.selectedRanges.map(\.rangeValue)), name: "Toggle Markdown Task")
+    }
+    private func wrapNote(_ opening: String, _ closing: String) {
+        guard markdownViewMode != .preview, let document = currentDocument, document.resolvedSyntax == .markdown, let view = currentTextView,
+              !view.hasMarkedText() else { NSSound.beep(); return }
+        replaceText(NoteEditing.wrap(document.storage.string, selections: view.selectedRanges.map(\.rangeValue), opening: opening, closing: closing), name: "Markdown Formatting")
+    }
+    @objc private func noteBold() { wrapNote("**", "**") }
+    @objc private func noteItalic() { wrapNote("*", "*") }
+    @objc private func noteCode() { wrapNote("`", "`") }
+    @objc private func noteCodeBlock() { let end = currentDocument?.settings.lineEnding.text ?? "\n"; wrapNote("```" + end, end + "```") }
+    @objc private func noteLink() { wrapNote("[", "](https://)") }
+    @objc private func insertTimestamp() {
+        guard markdownViewMode != .preview, let view = currentTextView, !view.hasMarkedText() else { return }
+        let formatter = DateFormatter(); formatter.dateFormat = "yyyy-MM-dd HH:mm"; formatter.locale = Locale(identifier: "en_US_POSIX")
+        replaceText(TextOperations.apply(in: view.string, edits: view.selectedRanges.map { .init(range: $0.rangeValue, text: formatter.string(from: Date())) }), name: "Insert Date and Time")
+    }
+    func insertNoteImage(_ data: Data) {
+        guard markdownViewMode != .preview, let document = currentDocument, document.resolvedSyntax == .markdown, let view = currentTextView,
+              !view.hasMarkedText(), TextOperations.valid(view.string, view.selectedRanges.map(\.rangeValue)) else { return }
+        guard document.fileURL != nil || save(document), let url = document.fileURL else { return }
+        do {
+            let asset = try NoteAssets.insertImage(data, beside: url)
+            let result = TextOperations.apply(in: view.string, edits: view.selectedRanges.map { .init(range: $0.rangeValue, text: asset.markdown) })
+            if result.error != nil { try? FileManager.default.removeItem(at: asset.url); showError(EditorFailure.invalidEdit(result.error!)); return }
+            replaceText(result, name: "Paste Markdown Image")
+            if document.storage.string != result.text { try? FileManager.default.removeItem(at: asset.url) }
+            refreshProject()
+        } catch { showError(error) }
+    }
+
     func executeCommand(_ name: String) -> Bool {
         switch name {
         case "new_file": newFile()
@@ -3194,6 +3646,17 @@ final class EditorWorkspace: NSObject, NSWindowDelegate,
         case "markdown_side": markdownToSide()
         case "markdown_edit": setMarkdownMode(.edit)
         case "markdown_export": exportMarkdown()
+        case "note_new": newNote(.blank)
+        case "note_meeting": newNote(.meeting)
+        case "note_daily": newNote(.daily)
+        case "note_tasks": newNote(.tasks)
+        case "markdown_task": toggleNoteTask()
+        case "markdown_bold": noteBold()
+        case "markdown_italic": noteItalic()
+        case "markdown_code": noteCode()
+        case "markdown_code_block": noteCodeBlock()
+        case "markdown_link": noteLink()
+        case "insert_timestamp": insertTimestamp()
         case "sort_lines": sortLines()
         case "upper_case": uppercase()
         case "lower_case": lowercase()
@@ -3248,6 +3711,9 @@ final class EditorWorkspace: NSObject, NSWindowDelegate,
          "outputVisible": !outputArea.isHidden, "output": outputView.string,
          "buildRunning": isBuildRunning, "pluginRunning": isPluginRunning,
          "outputTrimmed": outputWasTrimmed, "buildLog": buildRunner.logURL?.path ?? "",
+         "findMessage": findMessage.stringValue, "findMatches": cachedFindRanges.count,
+         "diskChangeCount": diskChanges.count, "notice": noticeBar.isHidden ? "" : noticeLabel.stringValue,
+         "monitorActive": fileMonitoringEnabled && !closed,
          "theme": EditorTheme.isLight ? "light" : "dark"]
     }
     #endif

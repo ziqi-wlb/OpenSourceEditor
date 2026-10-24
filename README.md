@@ -47,7 +47,13 @@ Swift and AppKit provide native windows, text layout, tabs, project trees, share
 
 Markdown files have an **Edit / Preview / Side by Side** toolbar. Use **⇧⌘V** to toggle rendered preview, **⌥⌘V** for side-by-side, **Outline** to navigate headings, and **Export HTML…** to save the current unsaved document as a styled page. **⇧⌘F** searches the project in a cancellable native sheet. **⌘/** toggles comments; **⇧⌘D** duplicates lines, **⇧⌘K** deletes lines, and **⌥↑ / ⌥↓** moves lines. These actions also appear in menus and the command palette.
 
-**File → Recovery → Enable Auto Recovery** optionally saves unsaved buffers in the background every five seconds. Recover a snapshot in a new window after an unexpected exit; changed or missing original files become untitled buffers. Saving and normal window closure remove the owned snapshot. See [Markdown, search and recovery behavior](docs/document-workspace.md) and [release acceptance and remaining work](docs/product-readiness.md).
+**Notes** adds blank/meeting/daily/task templates, list/task/quote continuation, task toggling (`⇧⌘Return`), bold (`⇧⌘B`), italic (`⌘I`), links/code blocks and timestamps. Paste a PNG/TIFF image into a saved Markdown note to create a unique PNG in its adjacent `assets/` directory and insert a relative link. Undo removes the link; it preserves the attachment for reuse.
+
+Preferences and file/workspace metadata restore after a normal quit. Unsaved text is kept only by opt-in recovery, so discarded edits do not reappear. External file events refresh the project; clean files reload, while modified/missing files keep their buffers and show a review notice. Project row menus create, rename, move and trash files/folders. Open buffers and recent paths follow moves across windows; trashing an open file preserves its text as an untitled buffer.
+
+Single-file search runs in the background with debounce, cancellation and revision checks. Partial results are labelled, and replacement requires a complete scan. See [daily-use implementation, limits and verification](docs/daily-use-implementation.md).
+
+**File → Recovery → Enable Auto Recovery** optionally saves unsaved buffers in the background every five seconds. Startup offers remaining snapshots by date and size; **Find Recovery Snapshots** opens the catalog manually. Recover a snapshot in a new window after an unexpected exit; changed or missing original files become untitled buffers. Saving and normal window closure remove the owned snapshot. See [Markdown, search and recovery behavior](docs/document-workspace.md) and [release acceptance and remaining work](docs/product-readiness.md).
 
 The release builds only `Sources/*.swift` and whitelisted Python/JSON resources. Tests, benchmarks, snapshots and test menu diagnostics compile only with `bash build.sh --tests`, into a separate **Source Editor Tests.app**, which declares no document associations. Generated icons come from the original Swift drawing source. Foundation parses Markdown and the system WebKit displays it on demand; no third-party runtime frameworks are bundled.
 
@@ -69,6 +75,7 @@ bash tests/run_all.sh --ui               # Adds native UI checks; requires a GUI
 python3 scripts/export_source.py .build/SourceEditor-source.tar.gz --with-tests
 # Optional native performance workloads, in a logged-in macOS GUI session:
 python3 tests/run_performance.py local-performance
+python3 tests/measure_search.py local-search  # matched replacement vs pinned baseline
 ```
 
 Results and screenshots stay in `.build/test-results/`. All tests use owned temporary files; native file chooser acceptance, real IME, and complete multi-screen/fullscreen behavior still need manual verification. A Windows build must also be run on Windows; cross-compilation alone does not verify its GUI.

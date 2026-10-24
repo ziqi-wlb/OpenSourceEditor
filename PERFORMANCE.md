@@ -1,7 +1,8 @@
 # Performance and resource reports
 
-The macOS 0.6.1 implementation uses native Swift/AppKit, document-owned text caches and visible-region TextKit layout. Performance workloads run in isolated owned applications and retain their evidence under ignored `.build/` directories.
+The historical macOS 0.6.1 measurements below cover native Swift/AppKit, document-owned text caches and visible-region TextKit layout. Performance workloads run in isolated owned applications and retain their evidence under ignored `.build/` directories.
 
+- [0.8.0 daily-use implementation, search optimization and resource measurements](docs/daily-use-implementation.md): bounded background search, ICU interruption, native undo fix, file-event handling and matched replacement benchmark.
 - [Optimization principles, before/after results and remaining costs](docs/performance-optimization.md): file opening, caret movement, native edits/undo, syntax painting, scrolling and 96-file lifetime checks.
 - [Release package size and runtime memory](docs/package-and-memory.md): compressed versus installed size, Intel/ARM slices, native dependencies, release idle/file memory and cache retention.
 

@@ -82,15 +82,8 @@ extension TextOperations {
 
     static func toggleComment(in text: String, selections: [NSRange], syntax: EditorSyntax) -> TextEditResult {
         guard valid(text, selections) else { return TextEditResult(text: text, selections: selections, error: "Invalid UTF-16 selection.") }
-        let token: String, closing: String
-        switch syntax {
-        case .swift, .javascript, .typescript, .c, .cpp, .rust, .go: token = "//"; closing = ""
-        case .python, .shell, .yaml: token = "#"; closing = ""
-        case .sql: token = "--"; closing = ""
-        case .css: token = "/*"; closing = "*/"
-        case .html, .xml, .markdown: token = "<!--"; closing = "-->"
-        case .json, .plainText: return TextEditResult(text: text, selections: selections, error: "This syntax has no supported comment form.")
-        }
+        guard let delimiters = syntax.commentDelimiters else { return TextEditResult(text: text, selections: selections, error: "This syntax has no supported comment form.") }
+        let token = delimiters.open, closing = delimiters.close
         let source = text as NSString
         let lineIndex = DocumentLineIndex(source)
         let starts = lineIndex.starts

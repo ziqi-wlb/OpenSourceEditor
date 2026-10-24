@@ -6,11 +6,38 @@ final class EditorAppDelegate: NSObject, NSApplicationDelegate {
     private let recentFiles: RecentFiles
     private var configuration: EditorConfiguration?
     private var awaitingTermination = false
+    private let desktopStore: EditorDesktopStore?
+    private var startupIssue: String?
+    private var closingApplication = false
 
-    init(recentFiles: RecentFiles = RecentFiles()) {
+    init(recentFiles: RecentFiles = RecentFiles(), desktopStore: EditorDesktopStore? = .production) {
         self.recentFiles = recentFiles
+        self.desktopStore = desktopStore
         super.init()
         NSWindow.allowsAutomaticWindowTabbing = false
+        do { configuration = try desktopStore?.loadConfiguration() }
+        catch { startupIssue = "Could not load preferences. The original file is preserved: " + error.localizedDescription }
+    }
+
+    func launch(openURLs: [URL], projectURL: URL?) {
+        if openURLs.isEmpty, projectURL == nil {
+            do {
+                if let state = try desktopStore?.loadDesktop() {
+                    for saved in state.workspaces {
+                        let workspace = newWindow()
+                        workspace.restoreDesktop(saved)
+                    }
+                }
+            } catch { startupIssue = "Could not restore workspace. The original file is preserved: " + error.localizedDescription }
+        }
+        if workspaces.isEmpty { newWindow(openURLs: openURLs, projectURL: projectURL) }
+        if let startupIssue { activeWorkspace?.showNotice(startupIssue) }
+        if let desktopStore { activeWorkspace?.offerRecoverySnapshots(directory: desktopStore.directory.appendingPathComponent("Recovery")) }
+    }
+
+    func persistDesktop() {
+        do { try desktopStore?.saveDesktop(SavedDesktop(workspaces: workspaces.map(\.desktopSnapshot))) }
+        catch { activeWorkspace?.showNotice("Workspace could not be saved: " + error.localizedDescription) }
     }
 
     var activeWorkspace: EditorWorkspace? {
@@ -47,6 +74,7 @@ final class EditorAppDelegate: NSObject, NSApplicationDelegate {
 
     func windowClosed(_ workspace: EditorWorkspace) {
         workspaces.removeAll(where: { $0 === workspace })
+        if !closingApplication { persistDesktop() }
         if let active = activeWorkspace { active.activateMenus() }
         else { installEmptyWindowMenus() }
     }
@@ -75,6 +103,8 @@ final class EditorAppDelegate: NSObject, NSApplicationDelegate {
         configuration = value
         for workspace in workspaces { workspace.applyLocalConfiguration(value, updateDocumentSettings: updateDocumentSettings) }
         activeWorkspace?.activateMenus()
+        do { try desktopStore?.saveConfiguration(value) }
+        catch { activeWorkspace?.showNotice("Preferences could not be saved: " + error.localizedDescription) }
     }
 
     func application(_ sender: NSApplication, openFiles filenames: [String]) {
@@ -113,6 +143,8 @@ final class EditorAppDelegate: NSObject, NSApplicationDelegate {
         for workspace in workspaces {
             if !workspace.confirmDocumentsBeforeClosing() { return .terminateCancel }
         }
+        persistDesktop()
+        closingApplication = true
         let busy = workspaces.contains(where: { $0.hasRunningWork })
         awaitingTermination = busy
         for workspace in workspaces { workspace.prepareForApplicationTermination() }

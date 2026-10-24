@@ -4,23 +4,17 @@ import Foundation
 /// matches intersecting their viewport. No text or AppKit objects are retained.
 struct SyntaxHighlights {
     let groups: [[NSRange]]
-    private static let patterns = [
-        #"\b(?:class|struct|enum|protocol|extension|func|def|function|let|var|const|if|else|elif|for|while|return|import|from|public|private|static|try|catch|throw|throws|async|await|true|false|null|nil|None|True|False|switch|case|break|continue|in|as|new|export|interface|type|fn|impl|use|package)\b"#,
-        #"\b\d+(?:\.\d+)?\b"#,
-        #"\"(?:\\.|[^\"\\])*\"|'(?:\\.|[^'\\])*'"#,
-        #"(?m)//.*$|/\*[\s\S]*?\*/"#,
-        #"(?m)#.*$"#,
-    ]
-    private static let expressions = patterns.map { try! NSRegularExpression(pattern: $0) }
-    static let supported = Set(["swift", "py", "js", "jsx", "ts", "tsx", "json", "c", "h", "cpp", "hpp", "m", "mm", "rs", "go", "sh", "rb", "java", "css", "html", "xml", "md", "yaml", "yml", "toml"])
+    private static let expressions: [EditorSyntax: [NSRegularExpression?]] = Dictionary(uniqueKeysWithValues: EditorSyntax.allCases.map { language in
+        let patterns: [String?] = [language.keywordPattern, #"\b\d+(?:\.\d+)?\b"#,
+                                  #"\"(?:\\.|[^\"\\])*\"|'(?:\\.|[^'\\])*'"#, language.commentPattern]
+        return (language, patterns.map { $0.map { try! NSRegularExpression(pattern: $0) } })
+    })
+    static let supported = Set(EditorSyntax.allCases.filter(\.supportsHighlighting).map(\.identifier))
 
     init(text: String, syntax: String) {
         let range = NSRange(location: 0, length: (text as NSString).length)
-        guard range.length > 0, range.length <= 2_000_000, Self.supported.contains(syntax) else { groups = []; return }
-        let hashComments = ["py", "sh", "rb", "yaml", "yml", "toml"].contains(syntax)
-        groups = [0, 1, 2, hashComments ? 4 : 3].map { index in
-            Self.expressions[index].matches(in: text, range: range).map(\.range)
-        }
+        guard range.length > 0, range.length <= 2_000_000, let language = EditorSyntax.resolve(syntax), language.supportsHighlighting else { groups = []; return }
+        groups = Self.expressions[language]!.map { $0?.matches(in: text, range: range).map(\.range) ?? [] }
     }
 
     /// Return only the visible intersection. A multiline comment can span the
