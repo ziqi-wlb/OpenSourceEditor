@@ -54,6 +54,8 @@ enum ProductUITests {
 
             Native **Markdown** with 中文 and 😀. This document stays editable.
 
+            [Jump to next section](#next-section)
+
             ## Features
 
             - [x] Edit / preview / side by side
@@ -188,7 +190,8 @@ enum ProductUITests {
             if let preview = workspace.markdownPreviewForTesting, let heading = preview.page?.headings.last {
                 let target = "#" + heading.anchor
                 let encoded = String(data: try JSONEncoder().encode(target), encoding: .utf8)!
-                let coordinates = await evaluate(preview.webView, "(() => { const hash = \(encoded); const contents = document.querySelector('details.contents'); if (contents) contents.open = true; window.scrollTo(0,0); const link = Array.from(document.querySelectorAll('details.contents a')).find(a => a.getAttribute('href') === hash); if (!link) return null; const r = link.getBoundingClientRect(); return [r.left+r.width/2,r.top+r.height/2]; })()") as? [Double]
+                check("Preview starts with source heading and no generated Contents", await evaluate(preview.webView, "document.querySelector('details.contents') === null && document.querySelector('main').firstElementChild.tagName === 'H1'") as? Bool == true)
+                let coordinates = await evaluate(preview.webView, "(() => { const hash = \(encoded); window.scrollTo(0,0); const link = Array.from(document.querySelectorAll('main a')).find(a => a.getAttribute('href') === hash); if (!link) return null; const r = link.getBoundingClientRect(); return [r.left+r.width/2,r.top+r.height/2]; })()") as? [Double]
                 var clicked = false
                 if let coordinates, coordinates.count == 2 {
                     await pump(0.1)
@@ -208,19 +211,19 @@ enum ProductUITests {
                 await pump(0.2)
                 let selectedHash = await evaluate(preview.webView, "location.hash") as? String
                 let visible = await evaluate(preview.webView, "(() => { const h = document.getElementById(\(encoded).slice(1)); if (!h) return false; const r = h.getBoundingClientRect(); return window.scrollY > 0 && r.bottom > 0 && r.top < innerHeight; })()") as? Bool == true
-                check("Contents navigates the rendered heading", clicked && visible && document.storage.string == source)
+                check("Source fragment link navigates the rendered heading", clicked && visible && document.storage.string == source)
                 if !clicked || !visible {
-                    let details = await evaluate(preview.webView, "JSON.stringify({url:location.href,links:Array.from(document.querySelectorAll('details.contents a')).map(a=>({href:a.href,target:a.getAttribute('href')}))})")
-                    print("DETAIL Contents: clicked=\(clicked), selected=\(selectedHash ?? "nil"), target=\(target), DOM=\(details ?? "nil")")
+                    let details = await evaluate(preview.webView, "JSON.stringify({url:location.href,links:Array.from(document.querySelectorAll('main a')).map(a=>({href:a.href,target:a.getAttribute('href')}))})")
+                    print("DETAIL Fragment: clicked=\(clicked), selected=\(selectedHash ?? "nil"), target=\(target), DOM=\(details ?? "nil")")
                 }
-            } else { check("Contents navigates the rendered heading", false) }
+            } else { check("Source fragment link navigates the rendered heading", false) }
             var light = EditorConfiguration(); light.theme = "light"
             workspace.applyConfiguration(light)
             check("Live theme rerenders", await wait { workspace.markdownPreviewForTesting?.isRendering == false && workspace.markdownPreviewForTesting?.page?.html.contains("data-theme=\"light\"") == true })
             let exported = directory.appendingPathComponent("export.html")
             workspace.fileChooser = ProductExportChooser(url: exported)
             _ = workspace.executeCommand("markdown_export")
-            check("Native export command writes HTML", (try? String(contentsOf: exported)).map { $0.contains("<table>") && !$0.contains("source-editor-link:") } == true)
+            check("Native export command writes HTML without generated Contents", (try? String(contentsOf: exported)).map { $0.contains("<table>") && !$0.contains("source-editor-link:") && !$0.contains("<details class=\"contents\">") } == true)
             await pump(0.6)
             try capture(workspace.window, "markdown-side-by-side-light.png")
             weak var oldPreview = workspace.markdownPreviewForTesting

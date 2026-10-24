@@ -208,17 +208,15 @@ enum MarkdownRenderer {
             }
         }
         let body = try html(root)
-        let contents = headings.map { "<a class=\"depth-\($0.level)\" href=\"#\(escape($0.anchor))\">\(escape($0.title))</a>" }.joined()
-        let toc = headings.isEmpty ? "" : "<details class=\"contents\"><summary>Contents</summary><nav>\(contents)</nav></details>"
         let theme = light ? "light" : "dark"
-        guard body.utf8.count + toc.utf8.count + title.utf8.count * 6 + css.utf8.count + 1024 <= maximumHTMLBytes else {
+        guard body.utf8.count + title.utf8.count * 6 + css.utf8.count + 1024 <= maximumHTMLBytes else {
             throw EditorFailure.invalidEdit("Rendered Markdown exceeds the 32 MiB HTML limit.")
         }
         let page = """
         <!doctype html><html lang="en" data-theme="\(theme)"><head><meta charset="utf-8">
         <meta name="viewport" content="width=device-width,initial-scale=1">
         <meta http-equiv="Content-Security-Policy" content="default-src 'none'; img-src data:; style-src 'unsafe-inline'; script-src 'none'; base-uri 'none'; form-action 'none'">
-        <title>\(escape(title))</title><style>\(css)</style></head><body><main>\(toc)\(body.isEmpty ? "<p class=\"empty\">Start writing Markdown to see your document here.</p>" : body)</main></body></html>
+        <title>\(escape(title))</title><style>\(css)</style></head><body><main>\(body.isEmpty ? "<p class=\"empty\">Start writing Markdown to see your document here.</p>" : body)</main></body></html>
         """
         return MarkdownPage(html: page, headings: headings, wordCount: words, localLinks: localLinks)
     }
@@ -235,7 +233,6 @@ enum MarkdownRenderer {
     ul,ol{padding-left:1.7em}li>p{margin:.25em 0}.task input{margin-right:8px;accent-color:var(--accent)}hr{border:0;border-top:1px solid var(--border);margin:2em 0}
     .table-wrap{overflow-x:auto;margin:1em 0}table{border-collapse:collapse;width:100%;font-size:14px}th,td{border:1px solid var(--border);padding:8px 12px;text-align:left}th{background:var(--panel)}tr:nth-child(even){background:var(--panel)}
     img{max-width:100%;height:auto;border-radius:6px}.image-placeholder,.empty{color:var(--muted)}.image-placeholder{display:inline-block;padding:10px;border:1px dashed var(--border);border-radius:6px}
-    .contents{border:1px solid var(--border);border-radius:8px;padding:10px 16px;font-size:13px;color:var(--muted)}summary{cursor:pointer}nav{display:flex;flex-direction:column;gap:4px;padding:10px 0}.depth-2{padding-left:12px}.depth-3,.depth-4,.depth-5,.depth-6{padding-left:24px}
-    @media(max-width:560px){main{padding:20px 18px 60px}body{font-size:15px}}@media print{body{background:white;color:black}main{max-width:none;padding:0}.contents{display:none}pre{white-space:pre-wrap}a{color:inherit}}
+    @media(max-width:560px){main{padding:20px 18px 60px}body{font-size:15px}}@media print{body{background:white;color:black}main{max-width:none;padding:0}pre{white-space:pre-wrap}a{color:inherit}}
     """
 }

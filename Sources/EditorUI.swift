@@ -1150,6 +1150,7 @@ final class EditorWorkspace: NSObject, NSWindowDelegate,
         if let selected, let row = (0..<outline.numberOfRows).first(where: { (outline.item(atRow: $0) as? ProjectItem)?.url == selected }) {
             outline.selectRowIndexes(IndexSet(integer: row), byExtendingSelection: false)
         }
+        followCurrentFileInSidebar()
     }
 
     @discardableResult
@@ -2095,6 +2096,7 @@ final class EditorWorkspace: NSObject, NSWindowDelegate,
             activePane = 0
             window.makeFirstResponder(panes.first?.textView)
             updateStatus()
+            followCurrentFileInSidebar()
             return
         }
         if let document = currentDocument, let text = currentTextView {
@@ -2106,6 +2108,7 @@ final class EditorWorkspace: NSObject, NSWindowDelegate,
         rebuildTabs()
         updateStatus()
         window.makeFirstResponder(currentTextView)
+        followCurrentFileInSidebar()
     }
 
     private func rebuildPanes() {
@@ -2463,6 +2466,7 @@ final class EditorWorkspace: NSObject, NSWindowDelegate,
         projectIndexWork = work
         DispatchQueue.global(qos: .userInitiated).async { work.start() }
         refreshFileMonitor()
+        followCurrentFileInSidebar()
     }
 
     func outlineView(_ outlineView: NSOutlineView, numberOfChildrenOfItem item: Any?) -> Int {
@@ -2884,6 +2888,7 @@ final class EditorWorkspace: NSObject, NSWindowDelegate,
             for pane in panes { pane.scheduleHighlight() }
             updateStatus()
             outline.reloadData()
+            followCurrentFileInSidebar()
             updateRecoverySnapshot()
             return true
         } catch {
@@ -3067,9 +3072,17 @@ final class EditorWorkspace: NSObject, NSWindowDelegate,
         return FilePathFormat.relative.string(for: url, project: projectRoot?.url) != nil
     }
 
-    private func revealInSidebar(_ url: URL) {
+    private func followCurrentFileInSidebar() {
+        guard projectRoot != nil, let url = currentDocument?.fileURL else { return }
+        revealInSidebar(url, showSidebar: false)
+    }
+
+    private func revealInSidebar(_ url: URL, showSidebar: Bool = true) {
         guard canRevealInSidebar(url) else { return }
-        if projectSplit.arrangedSubviews.first?.isHidden == true { toggleSidebar() }
+        if projectSplit.arrangedSubviews.first?.isHidden == true {
+            guard showSidebar else { return }
+            toggleSidebar()
+        }
         var target: Any?
         if let root = projectRoot, let relative = FilePathFormat.relative.string(for: url, project: root.url) {
             var node = root
@@ -3415,7 +3428,10 @@ final class EditorWorkspace: NSObject, NSWindowDelegate,
         guard let sidebar = projectSplit.arrangedSubviews.first else { return }
         sidebar.isHidden.toggle()
         projectSplit.adjustSubviews()
-        if !sidebar.isHidden { projectSplit.setPosition(240, ofDividerAt: 0) }
+        if !sidebar.isHidden {
+            projectSplit.setPosition(240, ofDividerAt: 0)
+            followCurrentFileInSidebar()
+        }
     }
 
     private func replaceText(_ result: TextEditResult, name: String) {

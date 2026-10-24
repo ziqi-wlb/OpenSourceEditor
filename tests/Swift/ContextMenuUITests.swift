@@ -116,12 +116,52 @@ enum ContextMenuUITests {
             let second = project.appendingPathComponent("other.txt")
             try Data("one two THREE\n".utf8).write(to: first)
             try Data("other\n".utf8).write(to: second)
+            for index in 0..<48 {
+                try Data("fixture\n".utf8).write(to: nested.appendingPathComponent(String(format: "%02d.txt", index)))
+            }
             delegate.openProject(EditorProject(folderURL: project))
             delegate.openDocument(first)
             let firstDocument = delegate.currentDocument!
             delegate.openDocument(second)
             let secondDocument = delegate.currentDocument!
             await pump()
+            guard let outline = delegate.window.contentView.map(descendants)?.compactMap({ $0 as? NSOutlineView }).first else {
+                throw EditorFailure.invalidEdit("Missing project tree")
+            }
+            func selectedPath() -> String? {
+                let row = outline.selectedRow
+                return row >= 0 ? outline.view(atColumn: 0, row: row, makeIfNecessary: true)?.toolTip : nil
+            }
+            check("Opening project file follows sidebar selection", selectedPath() == second.path)
+            delegate.selectDocument(delegate.documents.firstIndex { $0 === firstDocument }!)
+            check("Tab switch expands ancestors and follows nested Unicode file", selectedPath() == first.path)
+            check("Sidebar following retains editor focus", delegate.window.firstResponder === delegate.currentTextView)
+            outline.scrollRowToVisible(0)
+            check("Deep file fixture starts outside sidebar viewport", !outline.visibleRect.intersects(outline.rect(ofRow: outline.selectedRow)))
+            delegate.selectDocument(delegate.documents.firstIndex { $0 === firstDocument }!)
+            check("Reselecting active tab scrolls its sidebar row into view", selectedPath() == first.path &&
+                  outline.visibleRect.intersects(outline.rect(ofRow: outline.selectedRow)))
+            outline.collapseItem(outline.item(atRow: 0), collapseChildren: true)
+            delegate.selectDocument(delegate.documents.firstIndex { $0 === firstDocument }!)
+            check("Reselecting active tab expands collapsed file path", selectedPath() == first.path)
+            delegate.selectDocument(delegate.documents.firstIndex { $0 === secondDocument }!)
+            check("Tab switch keeps other expanded directories", selectedPath() == second.path &&
+                  (0..<outline.numberOfRows).contains { outline.view(atColumn: 0, row: $0, makeIfNecessary: true)?.toolTip == first.path })
+            let viewMenu = NSApp.mainMenu?.items.first { $0.title == "View" }?.submenu
+            let hidden = invoke("Toggle Sidebar", in: viewMenu)
+            delegate.selectDocument(delegate.documents.firstIndex { $0 === firstDocument }!)
+            check("Switching tabs leaves hidden sidebar hidden", hidden && outline.isHiddenOrHasHiddenAncestor)
+            let shown = invoke("Toggle Sidebar", in: viewMenu)
+            check("Showing sidebar follows current file", shown && !outline.isHiddenOrHasHiddenAncestor && selectedPath() == first.path)
+            delegate.selectDocument(delegate.documents.firstIndex { $0 === secondDocument }!)
+            let outsideDocumentURL = directory.appendingPathComponent("outside-project.txt")
+            try Data("outside\n".utf8).write(to: outsideDocumentURL)
+            delegate.openDocument(outsideDocumentURL)
+            check("Project-external tab preserves project and sidebar", selectedPath() == second.path && delegate.snapshot["projectRoot"] as? String == project.path)
+            _ = delegate.executeCommand("close_tab")
+            _ = delegate.executeCommand("new_file")
+            check("Untitled tab preserves project sidebar", selectedPath() == second.path)
+            _ = delegate.executeCommand("close_tab")
             guard let firstTab = tab(firstDocument), let tabMenu = menu(for: firstTab) else {
                 throw EditorFailure.invalidEdit("Missing tab context menu")
             }
@@ -138,9 +178,6 @@ enum ContextMenuUITests {
             let tabPopup = await popup(firstTab, title: "Copy File Path")
             check("real tab right click copies intended path", tabPopup && NSPasteboard.general.string(forType: .string) == first.path && delegate.currentDocument === secondDocument)
             invoke("Reveal in Side Bar", in: tabMenu)
-            guard let outline = delegate.window.contentView.map(descendants)?.compactMap({ $0 as? NSOutlineView }).first else {
-                throw EditorFailure.invalidEdit("Missing project tree")
-            }
             let row = outline.selectedRow
             check("reveal expands nested folder and selects file", row >= 0 && outline.view(atColumn: 0, row: row, makeIfNecessary: true)?.toolTip == first.path && delegate.currentDocument === secondDocument)
             let rowPoint = NSPoint(x: 90, y: outline.rect(ofRow: row).midY)
