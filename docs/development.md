@@ -51,7 +51,7 @@ python3 tests/recovery_restart_test.py '.build/Source Editor Tests.app/Contents/
 python3 tests/workspace_restart_test.py '.build/Source Editor Tests.app/Contents/MacOS/source-editor'
 python3 tests/check_portability.py
 python3 tests/check_documentation.py
-python3 tests/run_tests.py file-location-097 --ui --arch universal
+python3 tests/run_tests.py file-title-098 --ui --arch universal
 python3 scripts/generate_release_notes.py --check
 ```
 
@@ -83,4 +83,4 @@ New windows and folder-only projects show a native home with quick actions and r
 
 macOS 0.9.6 supports left/right and top/bottom editor splits with independent file selectors, cursors and scrolling. Use the titlebar split icon or ⌥⌘2; ⌥⌘3 focuses the other pane and ⌥⌘1 keeps the active single editor. Workspace/session restoration retains pane state. See [editor splits](editor-splits.md).
 
-macOS 0.9.7 adds the file-location input above the editor: complete names, explicit paths, duplicate-file choice and active-pane routing. ⌥⌘O focuses it, Return opens and Escape cancels. See [file location](file-location.md). Native checks include the location, preview, home, splits and Focus Mode; test output belongs to the current run, not the older split acceptance.
+macOS 0.9.8 reuses the top window title for transient file-path input, removing the permanent editor row. Single-click the title or use ⌥⌘O; Return/Open opens and Escape restores the title. Fullscreen uses the same input as a temporary overlay without shrinking the editor. See [file title and path input](file-location.md). Native checks include actual title clicks, unchanged editor height, preview, home, splits and Focus Mode; acceptance belongs to the current run.

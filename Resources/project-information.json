@@ -7,6 +7,19 @@
   },
   "releases": [
     {
+      "version": "0.9.8",
+      "changes": [
+        {
+          "english": "Reuse the top window file title for path input: click to edit, Return/Open to open, and Escape or leaving the input to restore the title. Remove the permanent location row.",
+          "chinese": "复用窗口顶部文件标题作为路径输入：单击编辑，回车/Open 打开，Escape 或离开输入后恢复标题，移除常驻路径行。"
+        },
+        {
+          "english": "Preserve centered titles, unsaved markers and editor space; use a temporary fullscreen overlay with the same input when the native titlebar is hidden.",
+          "chinese": "保留居中标题、未保存标记和编辑空间；原生标题栏在全屏隐藏时，临时在顶部显示同一个输入控件。"
+        }
+      ]
+    },
+    {
       "version": "0.9.7",
       "changes": [
         {

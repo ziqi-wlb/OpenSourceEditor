@@ -4,6 +4,11 @@
 
 Author: ziqi-wlb · [550461053@qq.com](mailto:550461053@qq.com)
 
+## 0.9.8
+
+- Reuse the top window file title for path input: click to edit, Return/Open to open, and Escape or leaving the input to restore the title. Remove the permanent location row.
+- Preserve centered titles, unsaved markers and editor space; use a temporary fullscreen overlay with the same input when the native titlebar is hidden.
+
 ## 0.9.7
 
 - Add an editable file-location bar above the editor; open complete file names, relative/absolute paths, home-directory paths and local file URLs with Return or Open.

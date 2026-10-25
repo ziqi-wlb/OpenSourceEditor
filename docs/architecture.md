@@ -15,7 +15,7 @@ flowchart TB
     app --> information[ProjectInformation: introduction and release notes]
     workspace --> home[WorkspaceHomeView: native quick actions]
     workspace --> splits[EditorSplitToolbar: pane files and layout]
-    workspace --> location[FileLocationBar: native path input]
+    workspace --> location[FileLocationTitle: shared window title and path input]
     location --> resolver[FileLocationResolver: exact names and local paths]
     workspace --> doc[EditorDocument: text and disk identity]
     workspace --> panes[EditorPane: TextKit views]

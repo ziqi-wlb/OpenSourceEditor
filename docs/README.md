@@ -10,7 +10,7 @@
 | Visibility, full screen and Focus Mode | [Layout](layout.md) |
 | Workspace home and sidebar buttons | [Workspace home and sidebar buttons](workspace-home.md) |
 | Editor splits and independent files | [Editor splits](editor-splits.md) |
-| Open a file by complete name or path | [File-location input](file-location.md) |
+| Open a file by complete name or path | [File title and path input](file-location.md) |
 | Workspace restoration | [Workspace restoration](workspace-restoration.md) |
 | Development, tests and source distribution | [Development](development.md) |
 | Author contact and version history | [Release notes](../RELEASE_NOTES.md) |

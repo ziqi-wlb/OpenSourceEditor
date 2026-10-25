@@ -15,7 +15,7 @@ flowchart TB
     app --> information[ProjectInformation：介绍与版本说明]
     workspace --> home[WorkspaceHomeView：原生快捷操作]
     workspace --> splits[EditorSplitToolbar：区域文件和布局]
-    workspace --> location[FileLocationBar：原生路径输入]
+    workspace --> location[FileLocationTitle：复用窗口标题和路径输入]
     location --> resolver[FileLocationResolver：精确名称和本地路径]
     workspace --> doc[EditorDocument：文本与磁盘身份]
     workspace --> panes[EditorPane：TextKit 编辑视图]

@@ -2,7 +2,7 @@
 
 [中文](file-location.zh-CN.md)
 
-The macOS editor has a file-location input directly below the file tabs. Click the displayed path, replace it with a file name or path, then press **Return** or click **Open**. **File → Open File by Name or Path…** and **⌥⌘O** focus and select the input. The existing **⌘L** Go to Line shortcut is unchanged.
+The macOS editor reuses the **file title at the very top of the window** for path input. Normally it displays the file name and unsaved marker. **Single-click the title** to edit its full path, enter a file name or path, then press **Return** or click **Open**. The editor has no permanent path row; path entry does not reduce its viewport height. **File → Open File by Name or Path…** and **⌥⌘O** focus and select the input. The existing **⌘L** Go to Line shortcut is unchanged.
 
 Accepted input:
 
@@ -18,8 +18,8 @@ Type paths as text, without shell quotes. Shell variables and expressions are no
 
 Files already open are selected without reloading their buffer, preserving unsaved changes. In a split layout the active pane receives the file and the companion pane retains its view. The input follows active tabs/panes, Save As and the return to home. Project files opened here use the existing sidebar-follow behavior. Missing or invalid paths keep the attempted input available for correction and show a notification; folder paths direct users to Open Folder. File decoding/read errors retain the normal error dialog. No file is created or saved by this input.
 
-**Escape** cancels input and restores the current path and editor focus. The location remains available with the file tabs hidden and during Markdown preview. Focus Mode hides the row; **⌥⌘O** reveals it while entering a path, and Escape or returning to the editor hides it again. Dark/light themes and narrow layouts share native AppKit controls.
+**Escape** cancels input and restores the file title and editor focus. Clicking back into the editor also restores the title. The title entry remains available with file tabs hidden and during Markdown preview. Fullscreen/Focus Mode hides the native titlebar; **⌥⌘O** temporarily overlays the same input at the top of the content, and Escape or returning to the editor removes it without changing the editor layout. Dark/light themes and narrow layouts share native AppKit controls.
 
-`FileLocationResolver` owns path parsing, exact-name lookup and candidate deduplication. `FileLocationBar` owns text-entry and display state; `EditorWorkspace` routes resolved URLs to the existing document owner and activates the selected pane. The input owns strings, not document references or file storage.
+`FileLocationResolver` owns path parsing, exact-name lookup and candidate deduplication. `FileLocationTitle` owns title/text-entry state, and `FileLocationTitlebarController` owns native titlebar placement and the temporary fullscreen overlay; `EditorWorkspace` routes resolved URLs to the existing document owner and activates the selected pane. The input owns strings, not document references or file storage.
 
-Native acceptance uses isolated files and a separate test application to exercise Return/Open, shortcut routing, Unicode/URL paths, duplicate choice, dirty-buffer reuse, invalid input, sidebar following, splits, preview, focus/visibility, narrow themes and window isolation. This feature is implemented for macOS; Windows parity and new latency/RSS measurements are not claimed. See [development](development.md) and [editor splits](editor-splits.md).
+Native acceptance uses isolated files and a separate test application to exercise real single-click title activation, Return/Open, unchanged viewport height, shortcut routing, Unicode/URL paths, duplicate choice, dirty-buffer reuse, invalid input, sidebar following, splits, preview, fullscreen overlay restoration, centered narrow titles, themes and window isolation. This feature is implemented for macOS; Windows parity and new latency/RSS measurements are not claimed. See [development](development.md) and [editor splits](editor-splits.md).
