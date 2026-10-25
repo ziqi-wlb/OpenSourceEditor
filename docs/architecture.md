@@ -4,6 +4,8 @@
 
 Source Editor is an independently implemented native text editor. macOS uses Swift, AppKit, TextKit, Foundation and WebKit; Windows uses C++17, Win32 and RichEdit. The application builds from `editor/` alone. Sublime Text, REA, Node.js and the investigation directory are not runtime dependencies. Familiar editor interactions guide feature design; third-party editor binaries, source and icons are excluded from releases.
 
+The [file-location input](file-location.md) resolves local paths and complete names against the existing project index, then calls the document owner's normal open operation. Its display follows the active pane; it does not own document storage or scan directories while typing.
+
 ## Structure
 
 ```mermaid
@@ -13,6 +15,8 @@ flowchart TB
     app --> information[ProjectInformation: introduction and release notes]
     workspace --> home[WorkspaceHomeView: native quick actions]
     workspace --> splits[EditorSplitToolbar: pane files and layout]
+    workspace --> location[FileLocationBar: native path input]
+    location --> resolver[FileLocationResolver: exact names and local paths]
     workspace --> doc[EditorDocument: text and disk identity]
     workspace --> panes[EditorPane: TextKit views]
     panes --> storage[NSTextStorage: shared text]

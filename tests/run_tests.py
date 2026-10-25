@@ -72,6 +72,7 @@ def main():
     run('sdk',[sys.executable,'tests/plugin_host_test.py'],style='sdk')
     run('recovery-crash',[sys.executable,'tests/recovery_crash_test.py',str(binary)],style='json')
     if args.ui:
+        run('file-location-ui', [str(binary),'--file-location-ui-test='+str(output/'file-location-ui-artifacts')],timeout=45,style='json')
         run('split-ui', [str(binary),'--split-ui-test='+str(output/'split-ui-artifacts')],timeout=45,style='json')
         run('split-restart', [sys.executable,'tests/editor_split_restart_test.py',str(binary)],timeout=60,style='json')
         run('home-ui', [str(binary),'--home-ui-test='+str(output/'home-ui-artifacts')],timeout=30,style='json')

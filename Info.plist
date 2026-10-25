@@ -5,8 +5,8 @@
   <key>CFBundleDisplayName</key><string>Source Editor</string>
   <key>CFBundleIdentifier</key><string>org.sourceeditor.SourceEditor</string>
   <key>CFBundleExecutable</key><string>source-editor</string>
-  <key>CFBundleVersion</key><string>19</string>
-  <key>CFBundleShortVersionString</key><string>0.9.6</string>
+  <key>CFBundleVersion</key><string>20</string>
+  <key>CFBundleShortVersionString</key><string>0.9.7</string>
   <key>CFBundleIconFile</key><string>SourceEditor.icns</string>
   <key>CFBundlePackageType</key><string>APPL</string>
   <key>LSMultipleInstancesProhibited</key><true/>

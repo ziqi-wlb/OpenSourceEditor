@@ -53,6 +53,7 @@ python3 tests/recovery_restart_test.py '.build/Source Editor Tests.app/Contents/
 python3 tests/workspace_restart_test.py '.build/Source Editor Tests.app/Contents/MacOS/source-editor'
 python3 tests/check_portability.py
 python3 tests/check_documentation.py
+python3 tests/run_tests.py file-location-097 --ui --arch universal
 python3 scripts/generate_release_notes.py --check
 ```
 
@@ -83,3 +84,5 @@ Preferences → Remember Previous Workspace 默认开启，同时恢复文件夹
 新窗口和纯文件夹项目显示带快捷操作与最近记录的原生主页，关闭最后一个文件标签后回到主页。通过项目标题/窗口标题栏的侧栏图标或 ⌃⌘B 扩大主区域。参见[工作区主页](workspace-home.zh-CN.md)。
 
 macOS 0.9.6 支持左右/上下编辑区切分，各区域独立选择文件并保留光标、滚动位置。通过标题栏图标或 ⌥⌘2 切分、⌥⌘3 切换区域、⌥⌘1 保留活动区域并合并；工作区/会话恢复保留区域状态。参见[编辑区切分](editor-splits.zh-CN.md)。
+
+macOS 0.9.7 增加编辑区上方的文件输入栏：支持完整名称、显式路径、重名选择及活动区域路由。⌥⌘O 聚焦，回车打开，Escape 取消。参见[文件输入栏](file-location.zh-CN.md)。原生检查覆盖输入栏、预览、主页、切分和专注模式；结果属于当前验收运行，不沿用旧切分版本的验收结果。

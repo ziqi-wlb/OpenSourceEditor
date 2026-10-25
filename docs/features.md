@@ -2,11 +2,12 @@
 
 [中文](features.zh-CN.md)
 
-This matrix describes current source capabilities. macOS 0.9.3 uses Swift/AppKit; Windows x64 is a separate experimental implementation. They do not fully share UI, editing core or extension host. macOS tests do not establish Windows stability or features.
+This matrix describes current source capabilities. macOS 0.9.7 uses Swift/AppKit; Windows x64 is a separate experimental implementation. They do not fully share UI, editing core or extension host. macOS tests do not establish Windows stability or features.
 
 | Everyday capability | macOS | Windows |
 | --- | --- | --- |
 | Open/save/save-as/save-all | Strict encoding, disk conflicts, atomic replacement | Separate Win32 implementation |
+| File-location input | Complete name, relative/absolute/home paths, local file URLs and duplicate-name choice | Not implemented |
 | Tabs/context menus | Copy path/name/relative path, Finder reveal, save/close | Tab/text/tree context menus and Explorer reveal |
 | Multiple windows | Native window tabs, detach/merge, active-window menus | No equivalent macOS workspace model |
 | Layout and Focus Mode | Hide sidebar/tabs/status/gutter; native fullscreen/menu auto-hide; restore/persist normal layout | No equivalent Focus Mode |
@@ -31,6 +32,7 @@ This matrix describes current source capabilities. macOS 0.9.3 uses Swift/AppKit
 | --- | --- |
 | Open project folder | File → Open Folder |
 | Quick Open | ⌘P |
+| Open by complete name or path | Click the file-location bar or ⌥⌘O; Return/Open to open, Escape to cancel |
 | Command palette | ⇧⌘P |
 | File/project find | ⌘F / ⇧⌘F |
 | Save all | File → Save All |

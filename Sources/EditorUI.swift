@@ -824,6 +824,7 @@ final class EditorWorkspace: NSObject, NSWindowDelegate,
     private let sidebarHeaderButton = NSButton(title: "Hide Sidebar", target: nil, action: nil)
     private let splitButton = NSButton(title: "Split Editor", target: nil, action: nil)
     private let splitToolbar = EditorSplitToolbar(frame: .zero)
+    private let fileLocation = FileLocationBar(frame: .zero)
     private let markdownBar = NSStackView()
     private let markdownModes = NSSegmentedControl(labels: ["Edit", "Preview", "Side by Side"], trackingMode: .selectOne, target: nil, action: nil)
     private let markdownInfo = NSTextField(labelWithString: "Markdown")
@@ -1408,6 +1409,7 @@ final class EditorWorkspace: NSObject, NSWindowDelegate,
         item(file, "New File", #selector(newFile), "n")
         item(file, "New Window", #selector(newWindow), "n", [.command, .shift])
         item(file, "Open…", #selector(openFile), "o")
+        item(file, "Open File by Name or Path…", #selector(focusFileLocation), "o", [.command, .option])
         item(file, "Open Folder…", #selector(openFolder), "o", [.command, .shift])
         applicationOwner?.addFolderMenuItems(to: file)
         let recent = NSMenu(title: "Open Recent")
@@ -1711,6 +1713,13 @@ final class EditorWorkspace: NSObject, NSWindowDelegate,
         status.style(foreground: EditorTheme.muted, background: EditorTheme.panel)
         makeMarkdownBar()
         makeFindBar()
+        fileLocation.onSubmit = { [weak self] text in self?.openFileLocation(text) }
+        fileLocation.onCancel = { [weak self] in
+            guard let self else { return }
+            if self.noticeKind == "file-location" { self.dismissNotice() }
+            self.focusContent()
+        }
+        fileLocation.onEditingChange = { [weak self] in self?.refreshFileLocationVisibility() }
         splitToolbar.isHidden = true
         splitToolbar.onDocument = { [weak self] index, document in
             guard let self, !self.pendingTermination, !self.pendingWindowClose,
@@ -1730,7 +1739,7 @@ final class EditorWorkspace: NSObject, NSWindowDelegate,
         let dismiss = NSButton(title: "×", target: self, action: #selector(dismissNotice))
         EditorTheme.styleIconButton(dismiss, symbol: "xmark", label: "Dismiss notification")
         for view in [noticeLabel, noticeButton, dismiss] { noticeBar.addArrangedSubview(view) }
-        for view in [tabScroll, noticeBar, markdownBar, findBar, splitToolbar, workSplit, status] {
+        for view in [tabScroll, fileLocation, noticeBar, markdownBar, findBar, splitToolbar, workSplit, status] {
             view.translatesAutoresizingMaskIntoConstraints = true
             view.autoresizingMask = []
             editorArea.addSubview(view)
@@ -1739,13 +1748,16 @@ final class EditorWorkspace: NSObject, NSWindowDelegate,
             guard let self, let tabScroll else { return }
             let tabHeight: CGFloat = tabScroll.isHidden || self.documents.isEmpty ? 0 : 40
             tabScroll.frame = NSRect(x: 0, y: 0, width: size.width, height: tabHeight)
+            let locationHeight: CGFloat = self.fileLocation.isHidden ? 0 : 34
+            self.fileLocation.frame = NSRect(x: 0, y: tabHeight, width: size.width, height: locationHeight)
+            let header = tabHeight + locationHeight
             let noticeHeight: CGFloat = self.noticeBar.isHidden ? 0 : 28
-            self.noticeBar.frame = NSRect(x: 10, y: tabHeight, width: max(1, size.width - 20), height: noticeHeight)
+            self.noticeBar.frame = NSRect(x: 10, y: header, width: max(1, size.width - 20), height: noticeHeight)
             let markdownHeight: CGFloat = self.markdownBar.isHidden ? 0 : 34
-            self.markdownBar.frame = NSRect(x: 10, y: tabHeight + noticeHeight, width: max(1, size.width - 20), height: markdownHeight)
+            self.markdownBar.frame = NSRect(x: 10, y: header + noticeHeight, width: max(1, size.width - 20), height: markdownHeight)
             let searchHeight: CGFloat = self.findBar.isHidden ? 0 : self.replaceRow.isHidden ? 32 : 66
-            self.findBar.frame = NSRect(x: 10, y: tabHeight + 2 + noticeHeight + markdownHeight, width: max(1, size.width - 20), height: searchHeight)
-            let chrome = tabHeight + noticeHeight + markdownHeight + searchHeight
+            self.findBar.frame = NSRect(x: 10, y: header + 2 + noticeHeight + markdownHeight, width: max(1, size.width - 20), height: searchHeight)
+            let chrome = header + noticeHeight + markdownHeight + searchHeight
             let splitHeight: CGFloat = self.splitToolbar.isHidden ? 0 : self.splitToolbar.height(for: size.width)
             self.splitToolbar.frame = NSRect(x: 0, y: chrome, width: size.width, height: splitHeight)
             let top = chrome + splitHeight > 0 ? chrome + splitHeight + 4 : 0
@@ -2134,6 +2146,7 @@ final class EditorWorkspace: NSObject, NSWindowDelegate,
         outputArea.layer?.backgroundColor = EditorTheme.panel.cgColor
         markdownInfo.textColor = EditorTheme.muted
         palette.updateTheme()
+        fileLocation.updateTheme()
         refreshHome()
     }
 
@@ -2255,19 +2268,20 @@ final class EditorWorkspace: NSObject, NSWindowDelegate,
         if projectRoot == nil { outline.reloadData() }
     }
 
-    func openDocument(_ url: URL) {
+    @discardableResult func openDocument(_ url: URL) -> Bool {
         let url = url.standardizedFileURL.resolvingSymlinksInPath()
         if let index = documents.firstIndex(where: { $0.fileURL?.standardizedFileURL == url }) {
             selectDocument(index)
             noteRecentFile(url)
-            return
+            return true
         }
         do {
             let document = try EditorDocument.open(url, settings: documentDefaults)
             addDocument(document)
             if let fileURL = document.fileURL { noteRecentFile(fileURL) }
+            return true
         }
-        catch { showError(error) }
+        catch { showError(error); return false }
     }
 
     func selectDocument(_ index: Int) {
@@ -2432,6 +2446,8 @@ final class EditorWorkspace: NSObject, NSWindowDelegate,
 
     private func updateStatus() {
         refreshSplitControls()
+        fileLocation.update(path: currentDocument?.fileURL?.path, enabled: !pendingTermination && !pendingWindowClose)
+        refreshFileLocationVisibility()
         let editing = currentDocument != nil
         for button in [status.encoding, status.lineEnding, status.indentation, status.syntax] { button.isHidden = !editing }
         status.needsLayout = true
@@ -2827,6 +2843,45 @@ final class EditorWorkspace: NSObject, NSWindowDelegate,
         panel.allowsMultipleSelection = true
         panel.canChooseDirectories = false
         if let urls = chooseFiles(panel) { for url in urls { openDocument(url) } }
+    }
+
+    private func refreshFileLocationVisibility() {
+        let hidden = focusLayout != nil && !fileLocation.isEditing
+        if fileLocation.isHidden != hidden { fileLocation.isHidden = hidden; editorArea?.needsLayout = true }
+    }
+
+    @objc private func focusFileLocation() {
+        guard !pendingTermination, !pendingWindowClose else { return }
+        fileLocation.focusInput()
+    }
+
+    private func openFileLocation(_ text: String) {
+        guard !pendingTermination, !pendingWindowClose else { return }
+        do {
+            let choices = try FileLocationResolver.resolve(text, project: projectRoot?.url,
+                currentFile: currentDocument?.fileURL, knownFiles: documents.compactMap(\.fileURL) + projectFiles)
+            if choices.count == 1, let url = choices.first {
+                openResolvedFileLocation(url)
+            } else {
+                palette.show(title: "Choose a file with this name…", choices: choices.map { url in
+                    PaletteChoice(title: url.lastPathComponent, detail: url.path) { [weak self] in
+                        guard let self, !self.pendingTermination, !self.pendingWindowClose else { return }
+                        self.openResolvedFileLocation(url)
+                    }
+                })
+            }
+        } catch {
+            showNotice(error.localizedDescription, kind: "file-location")
+            // Keep the attempted path available for correction.
+            fileLocation.focusInput()
+        }
+    }
+
+    private func openResolvedFileLocation(_ url: URL) {
+        guard openDocument(url) else { return }
+        if noticeKind == "file-location" { dismissNotice() }
+        fileLocation.update(path: currentDocument?.fileURL?.path, enabled: true)
+        focusContent()
     }
 
     @objc private func openFolder() {
@@ -3823,6 +3878,7 @@ final class EditorWorkspace: NSObject, NSWindowDelegate,
         projectSplit.adjustSubviews(); workSplit.adjustSubviews(); editorArea.needsLayout = true
         updateSidebarToggle()
         refreshSplitControls()
+        refreshFileLocationVisibility()
         focusContent()
         focusEnteredFullScreen = !window.styleMask.contains(.fullScreen)
         if focusEnteredFullScreen { toggleFullScreen() }
@@ -3840,6 +3896,7 @@ final class EditorWorkspace: NSObject, NSWindowDelegate,
         refreshMarkdown(); followCurrentFileInSidebar()
         updateSidebarToggle()
         refreshSplitControls()
+        refreshFileLocationVisibility()
         focusContent()
     }
 
@@ -3889,6 +3946,7 @@ final class EditorWorkspace: NSObject, NSWindowDelegate,
             ("File: Open Containing Folder", "Reveal in Finder", { [weak self] in self?.revealCurrentFile() }),
             ("File: Reveal in Side Bar", "Locate project file", { [weak self] in self?.revealCurrentFileInSidebar() }),
             ("File: Close Tab", "⌘W", { [weak self] in self?.closeTab() }),
+            ("File: Open File by Name or Path", "⌥⌘O", { [weak self] in self?.focusFileLocation() }),
             ("File: Reopen Closed File", "⇧⌘T", { [weak self] in self?.reopenClosedFile() }),
             ("View: Split Editor", "⌥⌘2 · shared document", { [weak self] in self?.toggleSplit() }),
             ("View: Split Right", "Two independent editor panes", { [weak self] in self?.splitRight() }),
@@ -4271,6 +4329,7 @@ final class EditorWorkspace: NSObject, NSWindowDelegate,
         case "command_palette": showCommands()
         case "dismiss_palette": palette.dismiss()
         case "quick_open": quickOpen()
+        case "open_file_location": focusFileLocation()
         case "build": runBuildAction()
         case "cancel_build": cancelBuild()
         case "run_plugin": runPluginAction()

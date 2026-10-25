@@ -51,6 +51,7 @@ python3 tests/recovery_restart_test.py '.build/Source Editor Tests.app/Contents/
 python3 tests/workspace_restart_test.py '.build/Source Editor Tests.app/Contents/MacOS/source-editor'
 python3 tests/check_portability.py
 python3 tests/check_documentation.py
+python3 tests/run_tests.py file-location-097 --ui --arch universal
 python3 scripts/generate_release_notes.py --check
 ```
 
@@ -81,3 +82,5 @@ Preferences → Remember Previous Workspace defaults on and restores folders as 
 New windows and folder-only projects show a native home with quick actions and recent entries. Close the last file tab to return home. Use the sidebar icons in the project header/titlebar or ⌃⌘B to expand the main area. See [workspace home](workspace-home.md).
 
 macOS 0.9.6 supports left/right and top/bottom editor splits with independent file selectors, cursors and scrolling. Use the titlebar split icon or ⌥⌘2; ⌥⌘3 focuses the other pane and ⌥⌘1 keeps the active single editor. Workspace/session restoration retains pane state. See [editor splits](editor-splits.md).
+
+macOS 0.9.7 adds the file-location input above the editor: complete names, explicit paths, duplicate-file choice and active-pane routing. ⌥⌘O focuses it, Return opens and Escape cancels. See [file location](file-location.md). Native checks include the location, preview, home, splits and Focus Mode; test output belongs to the current run, not the older split acceptance.

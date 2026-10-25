@@ -4,6 +4,8 @@
 
 Source Editor 是独立实现的原生文本编辑器。macOS 使用 Swift / AppKit / TextKit / Foundation / WebKit；Windows 使用 C++17 / Win32 / RichEdit。应用可以从 `editor/` 单独编译，不需要安装 Sublime Text、REA、Node.js，也不需要逆向调查目录。熟悉编辑器的交互用于确定功能目标，发行程序不包含第三方编辑器的二进制、源码或图标。
 
+[文件输入栏](file-location.zh-CN.md) 解析本地路径，并在已有项目索引中匹配完整名称，然后调用文档所有者的正常打开流程。显示跟随活动区域，不拥有文档存储，也不会在输入时扫描目录。
+
 ## 系统结构
 
 ```mermaid
@@ -13,6 +15,8 @@ flowchart TB
     app --> information[ProjectInformation：介绍与版本说明]
     workspace --> home[WorkspaceHomeView：原生快捷操作]
     workspace --> splits[EditorSplitToolbar：区域文件和布局]
+    workspace --> location[FileLocationBar：原生路径输入]
+    location --> resolver[FileLocationResolver：精确名称和本地路径]
     workspace --> doc[EditorDocument：文本与磁盘身份]
     workspace --> panes[EditorPane：TextKit 编辑视图]
     panes --> storage[NSTextStorage：共享文本]

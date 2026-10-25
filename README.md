@@ -97,3 +97,5 @@ Preferences → Remember Previous Workspace defaults on and restores folders as 
 New windows and folder-only projects show a native home with quick actions and recent entries. Close the last file tab to return home. Use the sidebar icons in the project header/titlebar or ⌃⌘B to expand the main area. See [workspace home](docs/workspace-home.md).
 
 macOS 0.9.6 supports left/right and top/bottom editor splits with independent file selectors, cursors and scrolling. Use the titlebar split icon or ⌥⌘2; ⌥⌘3 focuses the other pane and ⌥⌘1 keeps the active single editor. Workspace/session restoration retains pane state. See [editor splits](docs/editor-splits.md).
+
+macOS 0.9.7 adds an editable file-location bar below the tabs. Click it or press ⌥⌘O, enter a complete file name or path, and press Return/Open. Duplicate names show a path chooser; open files retain unsaved edits and splits route to the active pane. See [file location](docs/file-location.md).

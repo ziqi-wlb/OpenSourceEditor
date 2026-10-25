@@ -11,6 +11,7 @@
 | 作者联系与版本历史 | [版本说明](../RELEASE_NOTES.zh-CN.md) |
 | 工作区主页与侧栏按钮 | [工作区主页与侧栏按钮](workspace-home.zh-CN.md) |
 | 编辑区切分与独立文件 | [编辑区切分](editor-splits.zh-CN.md) |
+| 按完整文件名或路径打开 | [文件输入栏](file-location.zh-CN.md) |
 | 工作区恢复 | [工作区恢复](workspace-restoration.zh-CN.md) |
 | 开发、测试、源码分发与贡献 | [Development](development.zh-CN.md) |
 | 退出保留草稿、重启恢复与恢复原件 | [Draft recovery](draft-recovery.zh-CN.md) |

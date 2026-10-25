@@ -4,6 +4,11 @@
 
 Author: ziqi-wlb · [550461053@qq.com](mailto:550461053@qq.com)
 
+## 0.9.7
+
+- Add an editable file-location bar above the editor; open complete file names, relative/absolute paths, home-directory paths and local file URLs with Return or Open.
+- Choose among duplicate project file names, reuse open drafts, follow the active split pane and reveal the input temporarily in Focus Mode with Option-Command-O.
+
 ## 0.9.6
 
 - Add left/right and top/bottom editor splits with a titlebar button, per-pane file selectors, focus switching and Single Pane.
