@@ -21,6 +21,17 @@ Use `--arch arm64` or `--arch x86_64` for one architecture. Universal contains t
 
 Current builds are unsigned and unnotarized. Use the normal Finder Open approval flow for downloads; scripts do not disable system security.
 
+## Delivering a local debug build
+
+Each completed editor debugging or feature iteration ends with local installation and a launch check. A successful build or test does not update an already running installed copy.
+
+1. Build and run the checks relevant to the change. Keep the accepted executable and its digest with the results.
+2. Quit the installed application normally. Use Keep Drafts for unfinished edits; preserve originals, and wait for owned work to finish. Never force-quit or discard content for an update.
+3. Back up the previous installation, install the accepted build, register Launch Services and launch the installed copy. The installer refuses to replace a running application.
+4. Verify the installed version, running bundle path and executable digest against the accepted artifact, and confirm one production instance. Save this evidence under the matching `.build/test-results/` run before reporting the fix complete.
+
+Routine local installation and normal restart are part of the development workflow. If a save dialog or other user decision prevents safe shutdown, retain the validated build and report the remaining step explicitly.
+
 ## Windows
 
 For Windows 10/11 x64, install Visual Studio Build Tools with Desktop development with C++ and the Windows SDK. From `editor/` in an x64 developer terminal:
