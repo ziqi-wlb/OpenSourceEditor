@@ -35,6 +35,28 @@ enum DailyFeatureTests {
             check("Hidden chrome preferences survive desktop serialization", restoredChrome?.tabsVisible == false && restoredChrome?.statusVisible == false && restoredChrome?.lineNumbersVisible == false)
             let legacy = try JSONDecoder().decode(SavedWorkspace.self, from: JSONEncoder().encode(saved))
             check("Legacy workspaces omit new chrome preferences safely", legacy.tabsVisible == nil && legacy.statusVisible == nil && legacy.lineNumbersVisible == nil)
+            var closed = saved
+            closed.sidebar = .init(expandedFolders: ["", "笔记", "笔记/中文😀"], selectedPath: "笔记/中文😀", scrollY: 50)
+            try store.saveDesktop(.init(workspaces: [], lastClosedWorkspace: closed))
+            let last = try store.loadDesktop()?.lastClosedWorkspace
+            check("Closed folder and Unicode sidebar roundtrip", last?.projectPath == saved.projectPath && last?.sidebar?.selectedPath == "笔记/中文😀" && last?.sidebar?.expandedFolders.count == 3 && last?.sidebar?.scrollY == 50)
+            for path in ["/absolute", "../escape", "a/./b", "a//b"] {
+                var invalidSidebar = closed; invalidSidebar.sidebar?.selectedPath = path
+                rejects("Invalid closed sidebar path rejected: " + path) { try store.saveDesktop(.init(workspaces: [], lastClosedWorkspace: invalidSidebar)) }
+            }
+            var invalidSidebar = closed; invalidSidebar.sidebar?.scrollY = -1
+            rejects("Invalid closed sidebar scroll rejected") { try store.saveDesktop(.init(workspaces: [], lastClosedWorkspace: invalidSidebar)) }
+            let suite = "org.sourceeditor.tests.recent." + UUID().uuidString
+            let defaults = UserDefaults(suiteName: suite)!
+            defer { defaults.removePersistentDomain(forName: suite) }
+            let files = RecentLocations(defaults: defaults), folders = RecentLocations(defaults: defaults, kind: .folders)
+            let recentFolder = directory.appendingPathComponent("folder"), movedFolder = directory.appendingPathComponent("moved-folder")
+            files.note(directory.appendingPathComponent("note.md")); folders.note(recentFolder); folders.note(recentFolder)
+            check("File and folder MRU keys are separate and deduplicated", files.urls.count == 1 && folders.urls == [recentFolder])
+            folders.relocate(from: recentFolder, to: movedFolder)
+            check("Folder MRU relocation and reload", RecentLocations(defaults: defaults, kind: .folders).urls == [movedFolder])
+            folders.clear()
+            check("Clearing recent folders preserves recent files", RecentLocations(defaults: defaults, kind: .folders).urls.isEmpty && RecentLocations(defaults: defaults).urls == files.urls)
             var invalid = saved; invalid.frame[0] = .infinity
             rejects("Nonfinite geometry rejected") { try store.saveDesktop(.init(workspaces: [invalid])) }
             invalid = saved; invalid.files[0].selections = [[-1, 0]]
@@ -95,7 +117,7 @@ enum DailyFeatureTests {
             let outside = directory.appendingPathComponent("outside"); try FileManager.default.createDirectory(at: outside, withIntermediateDirectories: true)
             try FileManager.default.createSymbolicLink(at: project.appendingPathComponent("link"), withDestinationURL: outside)
             rejects("Linked parent cannot escape project") { _ = try operations.create(in: project.appendingPathComponent("link"), name: "no.txt", directory: false) }
-            let recent = RecentFiles(defaults: nil); recent.note(renamed); recent.relocate(from: renamed, to: collision)
+            let recent = RecentLocations(defaults: nil); recent.note(renamed); recent.relocate(from: renamed, to: collision)
             check("Recent-file identity relocated", recent.urls == [collision])
             let image = try NoteAssets.insertImage(pixel, beside: renamed)
             let image2 = try NoteAssets.insertImage(pixel, beside: renamed)

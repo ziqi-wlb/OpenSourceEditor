@@ -3,6 +3,20 @@ import Foundation
 // Normal restart state contains file identities and presentation only. Unsaved
 // text belongs to EditorRecovery; a discarded buffer must not return on restart.
 struct SavedWorkspace: Codable {
+    struct Sidebar: Codable {
+        var expandedFolders: [String]
+        var selectedPath: String?
+        var scrollY: Double
+        func validate() throws {
+            func relative(_ path: String) -> Bool {
+                path.isEmpty || path.split(separator: "/", omittingEmptySubsequences: false).allSatisfy { !$0.isEmpty && $0 != "." && $0 != ".." }
+            }
+            guard scrollY.isFinite, scrollY >= 0,
+                  expandedFolders.allSatisfy(relative), selectedPath.map(relative) ?? true else {
+                throw EditorFailure.invalidEdit("Invalid project sidebar state.")
+            }
+        }
+    }
     struct File: Codable {
         var path: String
         var settings: DocumentSettings
@@ -21,17 +35,21 @@ struct SavedWorkspace: Codable {
     var tabsVisible: Bool? = nil
     var statusVisible: Bool? = nil
     var lineNumbersVisible: Bool? = nil
+    var sidebar: Sidebar? = nil
 }
 
 struct SavedDesktop: Codable {
     var version = 1
     var workspaces: [SavedWorkspace]
+    var lastClosedWorkspace: SavedWorkspace? = nil
     func validate() throws {
         guard version == 1, workspaces.count <= 32,
-              workspaces.reduce(0, { $0 + $1.files.count }) <= 256 else {
+              workspaces.reduce(0, { $0 + $1.files.count }) <= 256,
+              (lastClosedWorkspace?.files.count ?? 0) <= 256 else {
             throw EditorFailure.invalidEdit("Workspace state exceeds 32 windows or 256 files.")
         }
-        for workspace in workspaces {
+        for workspace in workspaces + (lastClosedWorkspace.map { [$0] } ?? []) {
+            try workspace.sidebar?.validate()
             if let name = workspace.recoveryFileName,
                (name != URL(fileURLWithPath: name).lastPathComponent || !name.hasSuffix(".json")) {
                 throw EditorFailure.invalidEdit("Invalid recovery file identity.")

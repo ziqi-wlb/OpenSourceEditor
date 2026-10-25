@@ -54,3 +54,5 @@
 完整 TextMate/Sublime 语法、片段、LSP 补全/诊断、矩形选择、minimap、项目正则替换与未保存文本搜索、Git 差异视图、内置终端、Markdown 公式/Mermaid/PDF、预览直接编辑任务、通用插件兼容、签名公证与自动更新尚未齐备。
 
 中文/日文真实输入法、VoiceOver、长时间连续编辑、多屏/全屏/睡眠唤醒、Intel 实机和 Windows 原生 GUI 仍需专项验收。自动测试通过与功能存在不能作为“所有功能完整”或工业级认证。后续任务和验收标准见 [产品就绪清单](product-readiness.zh-CN.md)。
+
+Preferences → Remember Previous Workspace 默认开启，同时恢复文件夹与文件标签。关闭后重开进入空白窗口，保留可手动恢复的草稿与独立的最近文件夹历史。参见[工作区恢复](workspace-restoration.zh-CN.md)。

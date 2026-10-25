@@ -27,3 +27,5 @@ The workspace owns visibility and one transient Focus Mode snapshot. Its frame-l
 Native acceptance includes independent toggles, actual fullscreen entry/exit, menu/Dock presentation options, restored layouts, editor focus and unchanged text. Screenshots and final check counts are recorded with the matching release gate. These checks do not establish cross-Space, multi-monitor, physical Intel or Windows parity.
 
 The final `bilingual-focus-093-verified` gate passed 646 checks with 13 explicit contract skips. Its 79 document-workspace UI checks include the scenarios above; production digests and the Focus Mode screenshot match macOS 0.9.3. Universal slices compiled and the Intel version entry passed under Rosetta. No new runtime memory or latency measurement is claimed.
+
+Preferences → Remember Previous Workspace defaults on and restores folders as well as file tabs. Turning it off starts blank while retaining backups for manual recovery and independent recent folder history. See [workspace restoration](workspace-restoration.md).

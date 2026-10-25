@@ -39,7 +39,7 @@ enum DraftRecoveryUITests {
         do {
             try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
             let store = EditorDesktopStore(directory: directory.appendingPathComponent("support"))
-            let app = EditorAppDelegate(recentFiles: RecentFiles(defaults: nil), desktopStore: store)
+            let app = EditorAppDelegate(recentFiles: RecentLocations(defaults: nil), desktopStore: store)
             let file = directory.appendingPathComponent("original.md")
             try "# Original 中文😀".write(to: file, atomically: true, encoding: .utf8)
             let source = try Data(contentsOf: file)
@@ -68,7 +68,7 @@ enum DraftRecoveryUITests {
             check("Close keeps latest edit and selection", retained.closedNormally == true && retained.documents[0].text == "# Last draft 中文😀" && retained.documents[0].selections == [[2, 4]])
             check("Backup never changes original bytes", try Data(contentsOf: file) == source)
             check("Closed drafts discoverable", RecoveryCandidate.discover(in: app.recoveryDirectory).contains { $0.url == url })
-            let nextApp = EditorAppDelegate(recentFiles: RecentFiles(defaults: nil), desktopStore: store)
+            let nextApp = EditorAppDelegate(recentFiles: RecentLocations(defaults: nil), desktopStore: store)
             nextApp.launch(openURLs: [], projectURL: nil)
             let restored = nextApp.workspaces.first { $0.documents.contains { $0.storage.string == "# Last draft 中文😀" } }!
             check("Normal restart automatically restores closed-window draft", restored.currentDocument?.isModified == true && restored.currentDocument?.fileURL == file.standardizedFileURL)
@@ -129,7 +129,7 @@ enum DraftRecoveryUITests {
 
     @MainActor static func prepareNormalQuit(directory: URL) throws {
         try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
-        let app = EditorAppDelegate(recentFiles: RecentFiles(defaults: nil), desktopStore: EditorDesktopStore(directory: directory.appendingPathComponent("support")))
+        let app = EditorAppDelegate(recentFiles: RecentLocations(defaults: nil), desktopStore: EditorDesktopStore(directory: directory.appendingPathComponent("support")))
         NSApp.delegate = app
         let file = directory.appendingPathComponent("original.md"), clean = directory.appendingPathComponent("clean.txt")
         try "# Disk original".write(to: file, atomically: true, encoding: .utf8)
@@ -169,7 +169,7 @@ enum DraftRecoveryUITests {
 
     @MainActor static func readNormalRestart(directory: URL) async -> Int32 {
         let store = EditorDesktopStore(directory: directory.appendingPathComponent("support"))
-        let app = EditorAppDelegate(recentFiles: RecentFiles(defaults: nil), desktopStore: store)
+        let app = EditorAppDelegate(recentFiles: RecentLocations(defaults: nil), desktopStore: store)
         app.launch(openURLs: [], projectURL: nil)
         let first = app.workspaces.first { $0.documents.contains { $0.storage.string == "# Last edit 中文😀" } }
         let second = app.workspaces.first { $0.currentDocument?.storage.string == "Untitled unfinished note 中文😀" }

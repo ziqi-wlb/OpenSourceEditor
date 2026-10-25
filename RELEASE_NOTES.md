@@ -4,6 +4,12 @@
 
 Author: ziqi-wlb · [550461053@qq.com](mailto:550461053@qq.com)
 
+## 0.9.4
+
+- Restore the last closed workspace, including folder-only projects and sidebar expansion, selection and scroll position.
+- Add Remember Previous Workspace, enabled by default; disabling it starts blank while retaining manually recoverable drafts and recent folder history.
+- Add Reopen Last Folder and Open Recent Folders to menus and the command palette; preserve layout after draft recovery.
+
 ## 0.9.3
 
 - Add bilingual project documentation, with language links for usage, architecture, development, extensions, performance and validation.

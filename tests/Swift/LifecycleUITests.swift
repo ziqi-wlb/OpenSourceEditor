@@ -290,11 +290,11 @@ enum LifecycleUITests {
             let suite = "source-editor-tests-\(UUID().uuidString)"
             let defaults = UserDefaults(suiteName: suite)!
             defer { defaults.removePersistentDomain(forName: suite) }
-            let recent = RecentFiles(defaults: defaults)
+            let recent = RecentLocations(defaults: defaults)
             recent.note(first); recent.note(second); recent.note(alias)
-            check("recent persistence keeps canonical MRU order", RecentFiles(defaults: defaults).urls == [first, second])
+            check("recent persistence keeps canonical MRU order", RecentLocations(defaults: defaults).urls == [first, second])
             recent.clear()
-            check("clearing recent files persists", RecentFiles(defaults: defaults).urls.isEmpty)
+            check("clearing recent files persists", RecentLocations(defaults: defaults).urls.isEmpty)
         } catch { check("file lifecycle workflow", false); print("DETAIL lifecycle error \(error)") }
         _ = delegate.executeCommand("dismiss_palette")
         if let sheet = NSApp.modalWindow, sheet.sheetParent === delegate.window { NSApp.abortModal(); await pump(0.2) }

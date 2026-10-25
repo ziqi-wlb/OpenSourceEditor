@@ -41,7 +41,7 @@ open "$HOME/Applications/Source Editor.app"
 
 File → New Window（⌘⇧N）在同一应用中创建工作区，默认合并为原生窗口标签，Dock 只有一个应用图标。每个工作区独立拥有文档、项目、选区和撤销；菜单跟随当前工作区，字体与主题全局共享。
 
-Window → Move Window Tab to New Window 拆分；Merge All Windows 合并。⌘⇧W 关闭工作区，⌘W 关闭文件页。退出检查所有窗口的未保存内容并等待构建/扩展取消。关闭最后窗口后应用仍运行，点击 Dock 可重新打开。
+Window → Move Window Tab to New Window 拆分；Merge All Windows 合并。⌘⇧W 关闭工作区，⌘W 关闭文件页。退出检查所有窗口的未保存内容并等待构建/扩展取消。关闭最后窗口后应用仍运行，开启 Remember Previous Workspace 时，点击 Dock 恢复最后关闭的工作区。
 
 Finder、普通 `open` 和直接 CLI 重启会复用当前应用，已打开文件会定位所属工作区。`open -n` 请求另一个实例。旧版本或不同 bundle identity 的窗口要先正常保存退出，旧图标才消失。
 
@@ -77,3 +77,5 @@ python3 scripts/export_source.py .build/SourceEditor-source.tar.gz --with-tests
 发布应用只包含生产 Swift 和支持资源，不包含测试、截图、日志、个人路径或调查目录。源码包包含中英文说明、构建脚本和可选测试。性能及资源见 [性能导航](PERFORMANCE.zh-CN.md)，开发方式见 [开发指南](docs/development.zh-CN.md)。
 
 基础词法规则并非完整 Sublime/TextMate 语法。LSP、完整片段、矩形选择、终端、Git 差异、公式/Mermaid/PDF、自动更新及签名公证尚不完整。原生 IME、VoiceOver、长期使用、多屏、物理 Intel 和 Windows GUI 仍需专项验收。Windows 功能较少；macOS 通过测试不代表 Windows 完成。参见 [功能与限制](docs/features.zh-CN.md)、[产品就绪](docs/product-readiness.zh-CN.md)。项目所有者尚未选择开源许可证。
+
+Preferences → Remember Previous Workspace 默认开启，同时恢复文件夹与文件标签。关闭后重开进入空白窗口，保留可手动恢复的草稿与独立的最近文件夹历史。参见[工作区恢复](docs/workspace-restoration.zh-CN.md)。

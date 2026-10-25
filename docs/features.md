@@ -54,3 +54,5 @@ See [document workspace](document-workspace.md), [draft recovery](draft-recovery
 Full TextMate/Sublime grammars, snippets, LSP completion/diagnostics, rectangular selection, minimap, project regex replacement/dirty-buffer search, Git diff, terminal, Markdown math/Mermaid/PDF, interactive preview tasks, general plugin compatibility, notarization and automatic updates remain incomplete.
 
 Real Chinese/Japanese IME, VoiceOver, prolonged editing, multiscreen/fullscreen/sleep, physical Intel and native Windows GUI need dedicated acceptance. Test success and feature presence do not certify industrial readiness or complete feature parity. See [readiness](product-readiness.md).
+
+Preferences → Remember Previous Workspace defaults on and restores folders as well as file tabs. Turning it off starts blank while retaining backups for manual recovery and independent recent folder history. See [workspace restoration](workspace-restoration.md).

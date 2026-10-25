@@ -19,6 +19,10 @@ enum PreferencesTestRunner {
             try require(c.tabSize == 4 && !c.translateTabsToSpaces && c.useTabStops && c.autoIndent && c.detectIndentation, "Indent defaults differ")
             try require(!c.wrapsText(isSourceCode: true) && c.wrapsText(isSourceCode: false), "auto wrapping is not syntax-sensitive")
         }
+        test("Workspace restoration defaults on for new and existing preferences") {
+            try require(EditorConfiguration().rememberWorkspace && EditorConfiguration.parse(Data("{}".utf8)).rememberWorkspace, "Workspace restoration must default on")
+            try require(rejected(#"{"remember_workspace":"false"}"#), "Wrong workspace preference type accepted")
+        }
         test("Native snake-case settings and original indentation switches") {
             let c = try EditorConfiguration.parse(Data(#"{"font_face":"Menlo","font_size":18,"default_font_size":14,"tab_size":128,"translate_tabs_to_spaces":true,"detect_indentation":false,"use_tab_stops":false,"auto_indent":false,"smart_indent":false,"shift_tab_unindent":true,"word_wrap":false}"#.utf8))
             try require(c.tabSize == 128 && c.translateTabsToSpaces && !c.detectIndentation && !c.useTabStops && !c.autoIndent && !c.smartIndent && c.shiftTabUnindent && !c.wordWrap, "Native settings were not applied")
@@ -58,13 +62,14 @@ enum PreferencesTestRunner {
             defer { try? FileManager.default.removeItem(at: folder) }
             let file = folder.appendingPathComponent("Preferences.sublime-settings")
             var c = EditorConfiguration()
-            c.tabSize = 8; c.translateTabsToSpaces = true; c.wordWrapMode = .automatic
+            c.tabSize = 8; c.translateTabsToSpaces = true; c.wordWrapMode = .automatic; c.rememberWorkspace = false
             c.keyBindings["build"] = try EditorKeyBinding.parse("Control+Option+K")
             try c.save(file)
             let restored = try EditorConfiguration.load(file)
             let json = try JSONSerialization.jsonObject(with: Data(contentsOf: file)) as! [String: Any]
             try require(restored.tabSize == 8 && restored.translateTabsToSpaces && restored.wordWrapMode == .automatic && restored.keyBindings["build"]?.source == "Control+Option+K", "Settings lost during save/load")
             try require(json["tab_size"] as? Int == 8 && json["tabSize"] == nil, "Save did not use canonical native key")
+            try require(!restored.rememberWorkspace && json["remember_workspace"] as? Bool == false, "Workspace switch lost during save/load")
         }
         let failed = results.filter { $0["status"] as? String == "failed" }.count
         let result: [String: Any] = ["suite": "source-editor-preferences", "passed": results.count - failed, "failed": failed,

@@ -7,6 +7,23 @@
   },
   "releases": [
     {
+      "version": "0.9.4",
+      "changes": [
+        {
+          "english": "Restore the last closed workspace, including folder-only projects and sidebar expansion, selection and scroll position.",
+          "chinese": "恢复最后关闭的工作区，包括纯文件夹项目与侧栏展开、选中及滚动位置。"
+        },
+        {
+          "english": "Add Remember Previous Workspace, enabled by default; disabling it starts blank while retaining manually recoverable drafts and recent folder history.",
+          "chinese": "增加默认开启的“记住上次工作区”；关闭后进入空白窗口，保留可手动恢复的草稿与最近文件夹记录。"
+        },
+        {
+          "english": "Add Reopen Last Folder and Open Recent Folders to menus and the command palette; preserve layout after draft recovery.",
+          "chinese": "菜单和命令面板增加重开上次文件夹与最近文件夹入口，草稿恢复后保留布局。"
+        }
+      ]
+    },
+    {
       "version": "0.9.3",
       "changes": [
         {

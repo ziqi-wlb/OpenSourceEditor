@@ -8,6 +8,7 @@
 | Architecture and implementation | [Architecture](architecture.md) |
 | Features and shortcuts | [Features](features.md) |
 | Visibility, full screen and Focus Mode | [Layout](layout.md) |
+| Workspace restoration | [Workspace restoration](workspace-restoration.md) |
 | Development, tests and source distribution | [Development](development.md) |
 | Author contact and version history | [Release notes](../RELEASE_NOTES.md) |
 | Drafts, restart and original files | [Draft recovery](draft-recovery.md) |

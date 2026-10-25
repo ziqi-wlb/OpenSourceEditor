@@ -10,8 +10,8 @@ Automatic backups go to the application's recovery directory and **do not overwr
 | --- | --- |
 | Default editing | Recovery is enabled; every 5 seconds checks unsaved documents and writes text, encoding, indentation and selections to independent JSON |
 | Close/Quit → Keep Drafts | Capture final edits, wait for writing, then close; originals remain unchanged |
-| Next normal launch | Restore retained drafts, untitled notes and saved tabs, without requiring notes to be named first |
-| Dock reopen after last window closes | Reload retained drafts; File → New Window creates a fresh workspace |
+| Next normal launch (workspace restoration enabled) | Restore retained drafts, untitled notes and saved tabs, without requiring notes to be named first |
+| Dock reopen after last window closes (workspace restoration enabled) | Restore the last closed folder, layout and retained drafts; File → New Window creates a fresh workspace |
 | Close → Save All | Save files; untitled files use a chooser; cancellation/failure cancels close |
 | Close → Discard Drafts | Delete this workspace's recovery data without writing originals; next launch reads disk files |
 | Close → Cancel | Keep the editor and its buffers editable |
@@ -53,3 +53,5 @@ python3 tests/recovery_restart_test.py '.build/Source Editor Tests.app/Contents/
 Logs stay in `.build/test-results/`. Universal compiles Intel/Apple Silicon slices; GUI tests here run on Apple Silicon, not physical Intel or Windows.
 
 Historical 0.9.0 `draft-final` passed 598 checks with 13 explicit skips, including 23 draft/font UI and 15 real normal quit/restart checks. See [resource report](release-090-performance.md). In 0.9.1, imported external sessions remain unchanged; native checks verify exact source bytes while automatic backups use owned storage.
+
+Preferences → Remember Previous Workspace defaults on and restores folders as well as file tabs. Turning it off starts blank while retaining backups for manual recovery and independent recent folder history. See [workspace restoration](workspace-restoration.md).

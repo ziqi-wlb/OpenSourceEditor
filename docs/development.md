@@ -48,6 +48,7 @@ Copy/run `windows/.build/SourceEditor.exe`. This is a portable application, with
 bash tests/run_all.sh local-check --arch universal
 bash tests/run_all.sh local-ui --ui --arch universal
 python3 tests/recovery_restart_test.py '.build/Source Editor Tests.app/Contents/MacOS/source-editor'
+python3 tests/workspace_restart_test.py '.build/Source Editor Tests.app/Contents/MacOS/source-editor'
 python3 tests/check_portability.py
 python3 tests/check_documentation.py
 python3 scripts/generate_release_notes.py --check
@@ -74,3 +75,5 @@ Exports include production source, resources, build scripts, tests and bilingual
 `Resources/project-information.json` owns author contact and bilingual release history. Run `python3 scripts/generate_release_notes.py` after changing it; `--check` verifies both generated documents. Keep release metadata aligned with `Info.plist`. Application introductions/releases are read offline; contact drafts require an explicit user action.
 
 GitHub Actions is configured for Universal macOS and Windows MSVC builds/encoding checks. Local success does not establish cloud execution. No LICENSE has been selected; the maintainer must select and include one before claiming formal open-source licensing.
+
+Preferences → Remember Previous Workspace defaults on and restores folders as well as file tabs. Turning it off starts blank while retaining backups for manual recovery and independent recent folder history. See [workspace restoration](workspace-restoration.md).

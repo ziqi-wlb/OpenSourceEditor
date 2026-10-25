@@ -1,9 +1,11 @@
 import AppKit
 
 /// Owns application lifetime; each workspace owns only its documents and window.
-final class EditorAppDelegate: NSObject, NSApplicationDelegate {
+final class EditorAppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate, NSMenuItemValidation {
     private(set) var workspaces: [EditorWorkspace] = []
-    private let recentFiles: RecentFiles
+    private let recentFiles: RecentLocations
+    private let recentFolders: RecentLocations
+    private var desktopState = SavedDesktop(workspaces: [])
     private var configuration: EditorConfiguration?
     private var awaitingTermination = false
     private let desktopStore: EditorDesktopStore?
@@ -12,39 +14,43 @@ final class EditorAppDelegate: NSObject, NSApplicationDelegate {
     private(set) var projectInformationWindow: ProjectInformationWindowController?
     var recoveryDirectory: URL { desktopStore?.directory.appendingPathComponent("Recovery") ?? EditorRecovery.defaultDirectory }
 
-    init(recentFiles: RecentFiles = RecentFiles(), desktopStore: EditorDesktopStore? = .production) {
+    init(recentFiles: RecentLocations = RecentLocations(), desktopStore: EditorDesktopStore? = .production,
+         recentFolders: RecentLocations = RecentLocations(defaults: Bundle.main.bundleIdentifier == "org.sourceeditor.SourceEditor" ? .standard : nil, kind: .folders)) {
         self.recentFiles = recentFiles
+        self.recentFolders = recentFolders
         self.desktopStore = desktopStore
         super.init()
         NSWindow.allowsAutomaticWindowTabbing = false
         do { configuration = try desktopStore?.loadConfiguration() }
         catch { startupIssue = "Could not load preferences. The original file is preserved: " + error.localizedDescription }
+        do { desktopState = try desktopStore?.loadDesktop() ?? SavedDesktop(workspaces: []) }
+        catch { startupIssue = "Could not restore workspace. The original file is preserved: " + error.localizedDescription }
     }
 
     func launch(openURLs: [URL], projectURL: URL?) {
         var restoredRecovery = Set<URL>()
-        if openURLs.isEmpty, projectURL == nil {
-            do {
-                if let state = try desktopStore?.loadDesktop() {
-                    for saved in state.workspaces {
-                        let workspace = newWindow()
-                        workspace.restoreDesktop(saved)
-                        if let name = saved.recoveryFileName {
-                            let url = recoveryDirectory.appendingPathComponent(name).standardizedFileURL
-                            if FileManager.default.fileExists(atPath: url.path),
-                               (try? EditorSession.load(url))?.closedNormally == true {
-                                _ = try workspace.restoreRecoverySnapshot(url, into: workspace)
-                                restoredRecovery.insert(url)
-                            }
-                        }
+        let restorePrevious = rememberWorkspace && openURLs.isEmpty && projectURL == nil
+        if restorePrevious {
+            let savedWindows = desktopState.workspaces.isEmpty ? (desktopState.lastClosedWorkspace.map { [$0] } ?? []) : desktopState.workspaces
+            for saved in savedWindows {
+                let workspace = newWindow()
+                workspace.restoreDesktop(saved)
+                if let name = saved.recoveryFileName {
+                    let url = recoveryDirectory.appendingPathComponent(name).standardizedFileURL
+                    if FileManager.default.fileExists(atPath: url.path),
+                       (try? EditorSession.load(url))?.closedNormally == true {
+                        do {
+                            _ = try workspace.restoreRecoverySnapshot(url, into: workspace)
+                            restoredRecovery.insert(url)
+                        } catch { startupIssue = "Draft backup could not be restored; it is preserved: " + error.localizedDescription }
                     }
                 }
-            } catch { startupIssue = "Could not restore workspace. The original file is preserved: " + error.localizedDescription }
+            }
         }
         if workspaces.isEmpty { newWindow(openURLs: openURLs, projectURL: projectURL) }
         // Closing a window removes it from the normal desktop list, but its
         // explicitly retained drafts must still return on the next launch.
-        for candidate in RecoveryCandidate.discover(in: recoveryDirectory) where !restoredRecovery.contains(candidate.url.standardizedFileURL) {
+        for candidate in RecoveryCandidate.discover(in: recoveryDirectory) where restorePrevious && !restoredRecovery.contains(candidate.url.standardizedFileURL) {
             do {
                 if try EditorSession.load(candidate.url).closedNormally == true {
                     _ = try activeWorkspace?.restoreRecoverySnapshot(candidate.url)
@@ -56,7 +62,9 @@ final class EditorAppDelegate: NSObject, NSApplicationDelegate {
     }
 
     func persistDesktop() {
-        do { try desktopStore?.saveDesktop(SavedDesktop(workspaces: workspaces.map(\.desktopSnapshot))) }
+        if rememberWorkspace { desktopState.workspaces = workspaces.map(\.desktopSnapshot) }
+        else { desktopState = SavedDesktop(workspaces: []) }
+        do { try desktopStore?.saveDesktop(desktopState) }
         catch { activeWorkspace?.showNotice("Workspace could not be saved: " + error.localizedDescription) }
     }
 
@@ -93,6 +101,7 @@ final class EditorAppDelegate: NSObject, NSApplicationDelegate {
     }
 
     func windowClosed(_ workspace: EditorWorkspace) {
+        if !closingApplication, rememberWorkspace { desktopState.lastClosedWorkspace = workspace.desktopSnapshot }
         workspaces.removeAll(where: { $0 === workspace })
         if !closingApplication { persistDesktop() }
         if let active = activeWorkspace { active.activateMenus() }
@@ -100,6 +109,63 @@ final class EditorAppDelegate: NSObject, NSApplicationDelegate {
     }
 
     @objc func newWindowForTab(_ sender: Any?) { newWindow() }
+
+    var recentFolderURLs: [URL] { recentFolders.urls }
+    func noteRecentFolder(_ url: URL) { recentFolders.note(url) }
+    func relocateRecentFolders(from source: URL, to destination: URL) { recentFolders.relocate(from: source, to: destination) }
+    func openRecentFolder(_ url: URL) {
+        let url = url.standardizedFileURL.resolvingSymlinksInPath()
+        guard (try? url.resourceValues(forKeys: [.isDirectoryKey]).isDirectory) == true else {
+            if let activeWorkspace { activeWorkspace.showNotice("Recent folder is unavailable: " + url.path) }
+            else { let alert = NSAlert(); alert.messageText = "Recent folder is unavailable"; alert.informativeText = url.path; alert.runModal() }
+            return
+        }
+        if let owner = workspaces.first(where: { $0.projectFolderURL == url }) {
+            owner.window.makeKeyAndOrderFront(nil)
+        } else if let activeWorkspace { activeWorkspace.setProject(url) }
+        else { newWindow(projectURL: url) }
+    }
+    @objc func reopenLastFolder() { if let url = recentFolders.urls.first { openRecentFolder(url) } }
+    @objc private func openRecentFolderMenuItem(_ sender: NSMenuItem) { if let url = sender.representedObject as? URL { openRecentFolder(url) } }
+    @objc private func clearRecentFolders() { recentFolders.clear() }
+    func addFolderMenuItems(to menu: NSMenu) {
+        let last = NSMenuItem(title: "Reopen Last Folder", action: #selector(reopenLastFolder), keyEquivalent: "")
+        last.target = self; menu.addItem(last)
+        let recent = NSMenu(title: "Open Recent Folders")
+        recent.delegate = self
+        let item = NSMenuItem(title: recent.title, action: nil, keyEquivalent: "")
+        item.submenu = recent; menu.addItem(item)
+        menuNeedsUpdate(recent)
+    }
+    func menuNeedsUpdate(_ menu: NSMenu) {
+        menu.autoenablesItems = false
+        menu.removeAllItems()
+        if recentFolders.urls.isEmpty {
+            let empty = NSMenuItem(title: "No Recent Folders", action: nil, keyEquivalent: "")
+            empty.isEnabled = false; menu.addItem(empty)
+        }
+        for url in recentFolders.urls {
+            let item = NSMenuItem(title: url.lastPathComponent + "  (" + url.deletingLastPathComponent().lastPathComponent + ")", action: #selector(openRecentFolderMenuItem(_:)), keyEquivalent: "")
+            item.target = self; item.representedObject = url; item.toolTip = url.path; menu.addItem(item)
+        }
+        menu.addItem(.separator())
+        let clear = NSMenuItem(title: "Clear Recent Folders", action: #selector(clearRecentFolders), keyEquivalent: "")
+        clear.target = self; clear.isEnabled = !recentFolders.urls.isEmpty; menu.addItem(clear)
+    }
+    func validateMenuItem(_ menuItem: NSMenuItem) -> Bool {
+        if menuItem.action == #selector(toggleRememberWorkspace) { menuItem.state = rememberWorkspace ? .on : .off }
+        return menuItem.action != #selector(reopenLastFolder) || !recentFolders.urls.isEmpty
+    }
+    var rememberWorkspace: Bool { configuration?.rememberWorkspace ?? true }
+    @objc func toggleRememberWorkspace() {
+        var config = configuration ?? EditorConfiguration()
+        config.rememberWorkspace.toggle()
+        applyConfiguration(config, updateDocumentSettings: false)
+    }
+    func addWorkspacePreferenceItem(to menu: NSMenu) {
+        let item = NSMenuItem(title: "Remember Previous Workspace", action: #selector(toggleRememberWorkspace), keyEquivalent: "")
+        item.target = self; menu.addItem(item)
+    }
 
     func addProjectInformationMenuItems(to menu: NSMenu) {
         for (title, action) in [("About Source Editor", #selector(showProjectInformation)),
@@ -139,7 +205,10 @@ final class EditorAppDelegate: NSObject, NSApplicationDelegate {
         new.keyEquivalentModifierMask = [.command, .shift]
         new.target = self
         file.addItem(new)
-        for menu in [app, file] {
+        addFolderMenuItems(to: file)
+        let preferences = NSMenu(title: "Preferences")
+        addWorkspacePreferenceItem(to: preferences)
+        for menu in [app, file, preferences] {
             let item = NSMenuItem(title: menu.title, action: nil, keyEquivalent: "")
             item.submenu = menu
             main.addItem(item)
@@ -149,11 +218,13 @@ final class EditorAppDelegate: NSObject, NSApplicationDelegate {
     }
 
     func applyConfiguration(_ value: EditorConfiguration, updateDocumentSettings: Bool) {
+        let rememberChanged = rememberWorkspace != value.rememberWorkspace
         configuration = value
         for workspace in workspaces { workspace.applyLocalConfiguration(value, updateDocumentSettings: updateDocumentSettings) }
         activeWorkspace?.activateMenus()
         do { try desktopStore?.saveConfiguration(value) }
         catch { activeWorkspace?.showNotice("Preferences could not be saved: " + error.localizedDescription) }
+        if rememberChanged { persistDesktop() }
     }
 
     func application(_ sender: NSApplication, openFiles filenames: [String]) {

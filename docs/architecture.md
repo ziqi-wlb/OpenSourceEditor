@@ -39,7 +39,7 @@ Arrows indicate direct use. Responsibilities are separated by objects, rather th
 | Lexical rules | `LanguageRules.swift`, `SyntaxHighlights.swift` | Supported syntax and viewport highlighting; not a complete TextMate engine |
 | Search/projects | `SearchEngine.swift`, `ProjectSearch.swift`, `ProjectSearchPanel.swift` | Literal/regex file search, project traversal/literal search, cancellation and coverage limits |
 | Markdown/notes | `MarkdownRenderer.swift`, `MarkdownPreview.swift`, `NoteEditing.swift`, `NoteAssets.swift` | Foundation parsing, escaped HTML, WebKit, templates, tasks and image attachments |
-| Persistence | `DesktopState.swift`, `Session.swift`, `Recovery.swift`, `RecentFiles.swift` | Preferences, workspaces, manual sessions, independent drafts and recent files |
+| Persistence | `DesktopState.swift`, `Session.swift`, `Recovery.swift`, `RecentLocations.swift` | Preferences, workspaces, manual sessions, independent drafts and recent files |
 | External files | `FileMonitoring.swift`, `ProjectFileOperations.swift`, `LocalFileData.swift` | FSEvents, disk checks, scoped create/move/trash and bounded reads |
 | External work | `EditorServices.swift`, `Resources/plugin_host/` | Explicit commands, timeouts, cancellation, output bounds and limited Python SDK |
 | Windows | `windows/main.cpp`, `windows/tests.cpp` | Separate Win32 implementation and encoding tests; fewer features than macOS |
@@ -77,3 +77,5 @@ The workspace owns normal chrome visibility and a temporary Focus Mode snapshot.
 `build.sh` compiles production Swift and copies permitted Python/JSON resources. An original Swift drawing generates ICNS sizes; system fonts/icons require no font bundle. Universal builds compile arm64 and x86_64 separately and merge them with lipo. macOS 13 is the minimum. Windows uses MSVC or an installed Zig toolchain; system RichEdit is not bundled.
 
 `--tests` builds a separate application from the same sources with `EDITOR_TESTS`; its bundle declares no document associations. Release checks exclude test symbols, personal paths and caches. Native regressions exercise sheets, menus, views and process exit. A build does not establish another platform's GUI acceptance. See [build/install](../README.md), [features](features.md), [development](development.md) and [performance](performance-optimization.md).
+
+Preferences → Remember Previous Workspace defaults on and restores folders as well as file tabs. Turning it off starts blank while retaining backups for manual recovery and independent recent folder history. See [workspace restoration](workspace-restoration.md).

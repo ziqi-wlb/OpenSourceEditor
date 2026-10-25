@@ -43,12 +43,14 @@ struct EditorConfiguration: Codable {
         set { wordWrapMode = newValue ? .enabled : .disabled }
     }
     var theme = "dark"
+    var rememberWorkspace = true
     var keyBindings: [String: EditorKeyBinding] = [:]
     enum CodingKeys: String, CodingKey {
         case fontName, fontSize, defaultFontSize, tabSize, translateTabsToSpaces, detectIndentation
         case useTabStops, autoIndent, smartIndent, shiftTabUnindent, wordWrap, theme, keyBindings
         case fontFace = "font_face", font_size, default_font_size, tab_size, translate_tabs_to_spaces, detect_indentation
         case use_tab_stops, auto_indent, smart_indent, shift_tab_unindent, word_wrap
+        case remember_workspace
     }
     init() {}
     init(from decoder: Decoder) throws {
@@ -78,6 +80,7 @@ struct EditorConfiguration: Codable {
         if let nativeWrap, let legacyWrap, nativeWrap != legacyWrap { throw EditorFailure.invalidEdit("Conflicting word wrap settings.") }
         wordWrapMode = nativeWrap ?? legacyWrap ?? wordWrapMode
         theme = try c.decodeIfPresent(String.self, forKey: .theme) ?? theme
+        rememberWorkspace = try c.decodeIfPresent(Bool.self, forKey: .remember_workspace) ?? rememberWorkspace
         let bindings = try c.decodeIfPresent([String: String].self, forKey: .keyBindings) ?? [:]
         keyBindings = try bindings.mapValues(EditorKeyBinding.parse)
         guard fontSize.isFinite, fontSize > 0, defaultFontSize.isFinite, defaultFontSize > 0,
@@ -107,6 +110,7 @@ struct EditorConfiguration: Codable {
         if wordWrapMode == .automatic { try c.encode("auto", forKey: .word_wrap) }
         else { try c.encode(wordWrapMode == .enabled, forKey: .word_wrap) }
         try c.encode(theme, forKey: .theme)
+        try c.encode(rememberWorkspace, forKey: .remember_workspace)
         try c.encode(keyBindings.mapValues(\.source), forKey: .keyBindings)
     }
     static func load(_ url: URL) throws -> EditorConfiguration {

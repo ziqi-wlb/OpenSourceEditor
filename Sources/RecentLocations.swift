@@ -1,14 +1,24 @@
 import Foundation
 
-/// Stores successful file opens/saves; paths remain lookup values, never labels.
-final class RecentFiles {
+/// Owns bounded, canonical MRU identities for separately stored files and folders.
+final class RecentLocations {
+    enum Kind {
+        case files, folders
+        var storageKey: String {
+            switch self {
+            case .files: return "sourceEditor.recentFilePaths"
+            case .folders: return "sourceEditor.recentFolderPaths"
+            }
+        }
+    }
     private let defaults: UserDefaults?
-    private let key = "sourceEditor.recentFilePaths"
+    private let key: String
     private let limit = 20
     private(set) var urls: [URL] = []
 
-    init(defaults: UserDefaults? = .standard) {
+    init(defaults: UserDefaults? = .standard, kind: Kind = .files) {
         self.defaults = defaults
+        self.key = kind.storageKey
         for path in (defaults?.stringArray(forKey: key) ?? []).reversed() where path.hasPrefix("/") {
             note(URL(fileURLWithPath: path), persist: false)
         }

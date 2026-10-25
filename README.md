@@ -45,7 +45,7 @@ The installer preserves an existing Source Editor installation under ignored `.b
 
 **File → New Window** (`⌘⇧N`) creates a workspace inside the running application. New windows fold into native window tabs by default, with one Dock application icon. Each workspace keeps its own documents, project, selections and undo history. The menu bar follows the selected workspace; theme and font preferences apply across windows.
 
-Use **Window → Move Window Tab to New Window** to detach a workspace, and **Window → Merge All Windows** to fold them together again. Detached windows still share the same Dock icon. **File → Close Window** (`⌘⇧W`) closes a workspace after checking unsaved files; **Close Tab** (`⌘W`) closes a file. Quit checks unsaved documents in every workspace and waits for build/plugin cancellation. Closing the last window keeps the application running; clicking its Dock icon opens a new workspace.
+Use **Window → Move Window Tab to New Window** to detach a workspace, and **Window → Merge All Windows** to fold them together again. Detached windows still share the same Dock icon. **File → Close Window** (`⌘⇧W`) closes a workspace after checking unsaved files; **Close Tab** (`⌘W`) closes a file. Quit checks unsaved documents in every workspace and waits for build/plugin cancellation. Closing the last window keeps the application running; clicking its Dock icon restores the last closed workspace when Remember Previous Workspace is enabled.
 
 Finder, normal `open`, and direct CLI relaunches reuse the running application. Files already open in another workspace select that workspace. Avoid `open -n`, which requests a separate application instance. Windows from older versions or applications with a different bundle identity must be saved and quit normally before their old Dock icons disappear.
 
@@ -91,3 +91,5 @@ python3 tests/measure_search.py local-search  # matched replacement vs pinned ba
 ```
 
 Results and screenshots stay in `.build/test-results/`. All tests use owned temporary files; native file chooser acceptance, real IME, and complete multi-screen/fullscreen behavior still need manual verification. A Windows build must also be run on Windows; cross-compilation alone does not verify its GUI.
+
+Preferences → Remember Previous Workspace defaults on and restores folders as well as file tabs. Turning it off starts blank while retaining backups for manual recovery and independent recent folder history. See [workspace restoration](docs/workspace-restoration.md).

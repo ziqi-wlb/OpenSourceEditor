@@ -19,7 +19,7 @@ enum DailyUITests {
             try "# Original\n- [ ] task\n".write(to: md, atomically: true, encoding: .utf8)
             try "original disk".write(to: plain, atomically: true, encoding: .utf8)
             let store = EditorDesktopStore(directory: directory.appendingPathComponent("state"))
-            let app = EditorAppDelegate(recentFiles: RecentFiles(defaults: nil), desktopStore: store)
+            let app = EditorAppDelegate(recentFiles: RecentLocations(defaults: nil), desktopStore: store)
             let workspace = app.newWindow(openURLs: [md, plain], projectURL: project, tabbed: false)
             workspace.selectDocument(0)
             let document = workspace.currentDocument!
@@ -35,7 +35,7 @@ enum DailyUITests {
             check("Normal desktop never stores discarded text", !stateText.contains("DISCARDED") && !stateText.contains("Original"))
             try "# Current disk\n- [ ] task\n".write(to: md, atomically: true, encoding: .utf8)
             try store.saveDesktop(.init(workspaces: [saved]))
-            let restarted = EditorAppDelegate(recentFiles: RecentFiles(defaults: nil), desktopStore: store)
+            let restarted = EditorAppDelegate(recentFiles: RecentLocations(defaults: nil), desktopStore: store)
             restarted.launch(openURLs: [], projectURL: nil)
             fputs("DAILY: restored launch returned\n", stderr)
             let restored = restarted.activeWorkspace!

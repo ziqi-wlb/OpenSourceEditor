@@ -72,6 +72,8 @@ def main():
     run('sdk',[sys.executable,'tests/plugin_host_test.py'],style='sdk')
     run('recovery-crash',[sys.executable,'tests/recovery_crash_test.py',str(binary)],style='json')
     if args.ui:
+        run('workspace-ui', [str(binary),'--workspace-ui-test='+str(output/'workspace-ui-artifacts')],timeout=30,style='json')
+        run('workspace-restart',[sys.executable,'tests/workspace_restart_test.py',str(binary)],timeout=60,style='json')
         run('draft-ui', [str(binary),'--draft-ui-test='+str(output/'draft-ui-artifacts')],timeout=60,style='json')
         run('recovery-restart',[sys.executable,'tests/recovery_restart_test.py',str(binary)],timeout=60,style='json')
         run('daily-ui',[str(binary),'--daily-ui-test','--daily-directory='+str(output/'daily-ui-artifacts')],timeout=45,style='json')

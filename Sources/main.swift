@@ -34,6 +34,22 @@ if let flag = arguments.firstIndex(of: "--contract-test"), flag + 1 < arguments.
 if arguments.contains("--benchmark") { exit(BenchmarkRunner.run()) }
 let application = NSApplication.shared
 application.setActivationPolicy(.regular)
+if let flag = arguments.first(where: { $0.hasPrefix("--workspace-restart-write=") || $0.hasPrefix("--workspace-restart-read=") || $0.hasPrefix("--workspace-ui-test=") }) {
+    setbuf(stdout, nil)
+    let directory = URL(fileURLWithPath: String(flag.split(separator: "=", maxSplits: 1)[1]), isDirectory: true)
+    let mode = arguments.first(where: { $0.hasPrefix("--workspace-mode=") }).map { String($0.dropFirst("--workspace-mode=".count)) } ?? "closed"
+    Timer.scheduledTimer(withTimeInterval: 0.1, repeats: false) { _ in
+        Task { @MainActor in
+            if flag.hasPrefix("--workspace-restart-write=") {
+                do { try await WorkspaceRestorationTests.prepareRestart(directory: directory, mode: mode) }
+                catch { fputs(error.localizedDescription, stderr); exit(1) }
+            } else if flag.hasPrefix("--workspace-restart-read=") { exit(await WorkspaceRestorationTests.readRestart(directory: directory, mode: mode)) }
+            else { exit(await WorkspaceRestorationTests.run(directory: directory)) }
+        }
+    }
+    application.run()
+    exit(0)
+}
 if let flag = arguments.first(where: { $0.hasPrefix("--draft-restart-write=") || $0.hasPrefix("--draft-restart-read=") || $0.hasPrefix("--draft-ui-test=") }) {
     setbuf(stdout, nil)
     let directory = URL(fileURLWithPath: String(flag.split(separator: "=", maxSplits: 1)[1]), isDirectory: true)
@@ -49,7 +65,7 @@ if let flag = arguments.first(where: { $0.hasPrefix("--draft-restart-write=") ||
     application.run()
     exit(0)
 }
-let delegate = EditorAppDelegate(recentFiles: RecentFiles(defaults: (arguments.contains("--ui-self-test") || arguments.contains("--multi-window-ui-test") || arguments.contains("--performance-test") || arguments.contains("--product-ui-test") || arguments.contains("--daily-ui-test")) ? nil : .standard))
+let delegate = EditorAppDelegate(recentFiles: RecentLocations(defaults: (arguments.contains("--ui-self-test") || arguments.contains("--multi-window-ui-test") || arguments.contains("--performance-test") || arguments.contains("--product-ui-test") || arguments.contains("--daily-ui-test")) ? nil : .standard))
 application.delegate = delegate
 if arguments.contains("--daily-ui-test") {
     setbuf(stdout, nil)

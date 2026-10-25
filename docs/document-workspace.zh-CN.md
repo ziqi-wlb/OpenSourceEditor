@@ -65,3 +65,5 @@ bash tests/run_all.sh markdown-render-verification --ui --arch universal
 生产边界覆盖解析、本地资源、项目容量/取消和 Unicode 行/注释。原生 UI 覆盖转换、导出、旧代次、选区、单次撤销、恢复窗口与清理；独立进程突然退出，再读变化原件/损坏快照。0.7.0 为 450 项、13 跳过，含 34 Markdown UI、6 异常恢复；独立源码包重建相同 Universal 程序并通过 9 服务检查。跳过不是通过。
 
 [产品验收](product-readiness.zh-CN.md)、[WebKit 资源](document-workspace-performance.zh-CN.md)、[文本性能](performance-optimization.zh-CN.md) 说明边界，不能替代 IME、VoiceOver、长期使用和 Intel/Windows 原生验收。
+
+Preferences → Remember Previous Workspace 默认开启，同时恢复文件夹与文件标签。关闭后重开进入空白窗口，保留可手动恢复的草稿与独立的最近文件夹历史。参见[工作区恢复](workspace-restoration.zh-CN.md)。

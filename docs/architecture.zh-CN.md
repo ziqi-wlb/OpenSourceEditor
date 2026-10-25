@@ -39,7 +39,7 @@ flowchart TB
 | 词法 | `LanguageRules.swift`, `SyntaxHighlights.swift` | 支持语法与可见范围高亮；不是完整 TextMate 语法引擎 |
 | 搜索与项目 | `SearchEngine.swift`, `ProjectSearch.swift`, `ProjectSearchPanel.swift` | 单文件字面/正则搜索、项目遍历和字面搜索、取消与覆盖限制 |
 | Markdown 与笔记 | `MarkdownRenderer.swift`, `MarkdownPreview.swift`, `NoteEditing.swift`, `NoteAssets.swift` | Foundation 解析、转义 HTML、WebKit 显示、模板、任务、图片附件 |
-| 持久化 | `DesktopState.swift`, `Session.swift`, `Recovery.swift`, `RecentFiles.swift` | 偏好、工作区、手动 session、独立草稿、最近文件 |
+| 持久化 | `DesktopState.swift`, `Session.swift`, `Recovery.swift`, `RecentLocations.swift` | 偏好、工作区、手动 session、独立草稿、最近文件 |
 | 外部文件 | `FileMonitoring.swift`, `ProjectFileOperations.swift`, `LocalFileData.swift` | FSEvents、磁盘检查、受项目范围约束的创建/移动/废纸篓、限额读取 |
 | 外部工作 | `EditorServices.swift`, `Resources/plugin_host/` | 指定命令、超时、取消、输出上限、版本受限的 Python SDK |
 | Windows | `windows/main.cpp`, `windows/tests.cpp` | 独立 Win32 产品路径与编码测试，功能少于 macOS |
@@ -77,3 +77,5 @@ Markdown 显式预览立即启动，后续输入使用防抖。Foundation 拥有
 `build.sh` 只编译生产 Swift 文件并拷贝允许的 Python/JSON 资源。Swift 绘图脚本生成多尺寸原创 ICNS；系统字体和图标不需要额外字体包。`--arch universal` 分别编译 arm64 与 x86_64，再用 lipo 合并。最低 macOS 版本为 13。Windows 单独使用 MSVC 或已安装的 Zig 编译 x64 EXE，系统 RichEdit 不随程序捆绑。
 
 `--tests` 构建独立测试应用，编译相同生产源码并增加 `EDITOR_TESTS` 测试入口；测试包不注册文档关联。发布包检查测试符号、个人路径、缓存和资源白名单。原生 UI 回归验证实际 sheet、菜单、编辑视图及进程退出；成功构建不代表另一平台的 GUI 已验收。详情见 [构建安装](../README.zh-CN.md)、[功能矩阵](features.zh-CN.md)、[开发指南](development.zh-CN.md)、[性能报告](performance-optimization.zh-CN.md)。
+
+Preferences → Remember Previous Workspace 默认开启，同时恢复文件夹与文件标签。关闭后重开进入空白窗口，保留可手动恢复的草稿与独立的最近文件夹历史。参见[工作区恢复](workspace-restoration.zh-CN.md)。

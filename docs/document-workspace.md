@@ -69,3 +69,5 @@ Production-boundary checks cover parser behavior, local resource rules, project 
 The final macOS 0.7.0 universal gate passed 450 checks, including 34 document-workspace UI checks and six abrupt-exit/restart recovery checks. The older text-contract runner separately marked 13 vectors skipped: some require other production boundaries, while swap/title case and shipped loader compatibility remain unsupported. Skipped vectors are not counted as passes. A fresh editor-only source archive rebuilt the same universal release bytes and passed nine service checks.
 
 See [product acceptance](product-readiness.md), [current resource measurements](document-workspace-performance.md) and [earlier text-engine measurements](performance-optimization.md). These checks do not replace manual IME, VoiceOver, prolonged editing, physical Intel or Windows GUI acceptance.
+
+Preferences → Remember Previous Workspace defaults on and restores folders as well as file tabs. Turning it off starts blank while retaining backups for manual recovery and independent recent folder history. See [workspace restoration](workspace-restoration.md).

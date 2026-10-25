@@ -863,7 +863,7 @@ final class EditorWorkspace: NSObject, NSWindowDelegate,
     #if EDITOR_TESTS
     private(set) var lastContextMenu: NSMenu?
     #endif
-    private let recentFiles: RecentFiles
+    private let recentFiles: RecentLocations
     var fileChooser: EditorFileChoosing
     private var closedFileURLs: [URL] = []
     private let findBar = NSStackView()
@@ -1004,7 +1004,7 @@ final class EditorWorkspace: NSObject, NSWindowDelegate,
             frame: [Double(rect.origin.x), Double(rect.origin.y), Double(rect.width), Double(rect.height)],
             scrollY: Double(currentTextView?.enclosingScrollView?.contentView.bounds.origin.y ?? 0),
             recoveryFileName: recoveryName, tabsVisible: savedTabs, statusVisible: savedStatus,
-            lineNumbersVisible: savedLineNumbers)
+            lineNumbersVisible: savedLineNumbers, sidebar: projectSidebarSnapshot)
     }
 
     func restoreDesktop(_ saved: SavedWorkspace) {
@@ -1034,7 +1034,21 @@ final class EditorWorkspace: NSObject, NSWindowDelegate,
             splitEnabled = saved.split
             rebuildPanes(); rebuildTabs()
         }
-        if let path = saved.projectPath, FileManager.default.fileExists(atPath: path) { setProject(URL(fileURLWithPath: path, isDirectory: true)) }
+        if let path = saved.projectPath {
+            let url = URL(fileURLWithPath: path, isDirectory: true)
+            if (try? url.resourceValues(forKeys: [.isDirectoryKey]).isDirectory) == true {
+                setProject(url)
+            } else { failures.append("Project folder is unavailable: " + path) }
+        }
+        restoreDesktopPresentation(saved)
+        refreshFileMonitor()
+        if !failures.isEmpty { showNotice("Some files could not be restored: " + failures.joined(separator: "; ")) }
+    }
+
+    // Presentation has one owner and can be reapplied after drafts replace panes
+    // and rebuild the project tree, without reopening files from disk.
+    func restoreDesktopPresentation(_ saved: SavedWorkspace) {
+        if projectRoot?.url.path == saved.projectPath, let sidebar = saved.sidebar { restoreProjectSidebar(sidebar) }
         projectSplit.arrangedSubviews.first?.isHidden = !saved.sidebarVisible
         tabScroll.isHidden = !(saved.tabsVisible ?? true)
         status.isHidden = !(saved.statusVisible ?? true)
@@ -1046,13 +1060,12 @@ final class EditorWorkspace: NSObject, NSWindowDelegate,
             if NSScreen.screens.contains(where: { $0.visibleFrame.intersects(rect) }) { window.setFrame(rect, display: true) }
         }
         window.contentView?.layoutSubtreeIfNeeded()
+        if let sidebar = saved.sidebar { scrollProjectSidebar(to: sidebar.scrollY) }
         if let view = currentTextView { view.scroll(NSPoint(x: 0, y: min(CGFloat(saved.scrollY), max(0, view.bounds.height - (view.enclosingScrollView?.contentSize.height ?? 0))))) }
         updateStatus()
-        refreshFileMonitor()
-        if !failures.isEmpty { showNotice("Some files could not be restored: " + failures.joined(separator: "; ")) }
     }
 
-    init(recentFiles: RecentFiles = RecentFiles(), fileChooser: EditorFileChoosing = NativeEditorFileChooser()) {
+    init(recentFiles: RecentLocations = RecentLocations(), fileChooser: EditorFileChoosing = NativeEditorFileChooser()) {
         self.recentFiles = recentFiles
         self.fileChooser = fileChooser
         super.init()
@@ -1061,6 +1074,8 @@ final class EditorWorkspace: NSObject, NSWindowDelegate,
     var currentDocument: EditorDocument? {
         documents.indices.contains(selectedIndex) ? documents[selectedIndex] : nil
     }
+
+    var projectFolderURL: URL? { projectRoot?.url }
 
     var currentTextView: NSTextView? {
         if let text = window?.firstResponder as? EditorTextView, panes.contains(where: { $0.textView === text }) { return text }
@@ -1165,21 +1180,9 @@ final class EditorWorkspace: NSObject, NSWindowDelegate,
 
     private func refreshProject() {
         guard let root = projectRoot?.url else { return }
-        let expanded = Set((0..<outline.numberOfRows).compactMap { row -> String? in
-            guard let item = outline.item(atRow: row) as? ProjectItem, outline.isItemExpanded(item) else { return nil }
-            return item.url.path
-        })
-        let selected = outline.selectedRow >= 0 ? (outline.item(atRow: outline.selectedRow) as? ProjectItem)?.url : nil
+        let sidebar = projectSidebarSnapshot
         setProject(root)
-        func expand(_ node: ProjectItem) {
-            guard expanded.contains(node.url.path) else { return }
-            outline.expandItem(node)
-            for child in node.children where child.isDirectory { expand(child) }
-        }
-        if let projectRoot { expand(projectRoot) }
-        if let selected, let row = (0..<outline.numberOfRows).first(where: { (outline.item(atRow: $0) as? ProjectItem)?.url == selected }) {
-            outline.selectRowIndexes(IndexSet(integer: row), byExtendingSelection: false)
-        }
+        if let sidebar { restoreProjectSidebar(sidebar); scrollProjectSidebar(to: sidebar.scrollY) }
         followCurrentFileInSidebar()
     }
 
@@ -1204,6 +1207,7 @@ final class EditorWorkspace: NSObject, NSWindowDelegate,
         _ = try ProjectFileOperations(root: root).move(source, to: destination)
         for (document, next) in affected { document.relocate(to: next) }
         recentFiles.relocate(from: source, to: destination)
+        applicationOwner?.relocateRecentFolders(from: source, to: destination)
         for workspace in workspaces {
             if let old = workspace.projectRoot?.url, let next = ProjectFileOperations.rebase(old, from: source, to: destination) { workspace.setProject(next) }
             else { workspace.refreshProject() }
@@ -1347,6 +1351,7 @@ final class EditorWorkspace: NSObject, NSWindowDelegate,
         item(file, "New Window", #selector(newWindow), "n", [.command, .shift])
         item(file, "Open…", #selector(openFile), "o")
         item(file, "Open Folder…", #selector(openFolder), "o", [.command, .shift])
+        applicationOwner?.addFolderMenuItems(to: file)
         let recent = NSMenu(title: "Open Recent")
         let recentItem = NSMenuItem(title: "Open Recent", action: nil, keyEquivalent: "")
         recentItem.submenu = recent
@@ -1480,6 +1485,7 @@ final class EditorWorkspace: NSObject, NSWindowDelegate,
         item(tools, "Choose Plugin…", #selector(choosePlugin))
         item(tools, "Choose Python Interpreter…", #selector(choosePython))
         let preferences = menu("Preferences")
+        applicationOwner?.addWorkspacePreferenceItem(to: preferences)
         let fonts = NSMenu(title: "Editor Font")
         fonts.autoenablesItems = false
         let editorFontItem = NSMenuItem(title: "Editor Font", action: nil, keyEquivalent: "")
@@ -2508,6 +2514,11 @@ final class EditorWorkspace: NSObject, NSWindowDelegate,
 
     func setProject(_ url: URL) {
         let url = url.absoluteURL.standardizedFileURL.resolvingSymlinksInPath()
+        guard url.isFileURL, (try? url.resourceValues(forKeys: [.isDirectoryKey]).isDirectory) == true else {
+            showNotice("Project folder is unavailable: " + url.path)
+            return
+        }
+        let changed = projectRoot?.url != url
         if projectDocument?.folderURL != url { projectDocument = nil }
         projectRoot = ProjectItem(url)
         projectLabel.stringValue = url.lastPathComponent.uppercased()
@@ -2535,6 +2546,46 @@ final class EditorWorkspace: NSObject, NSWindowDelegate,
         DispatchQueue.global(qos: .userInitiated).async { work.start() }
         refreshFileMonitor()
         followCurrentFileInSidebar()
+        if changed { applicationOwner?.noteRecentFolder(url) }
+    }
+
+    private func projectRelativePath(_ url: URL) -> String? {
+        guard let root = projectRoot?.url else { return nil }
+        let prefix = root.pathComponents
+        guard url.pathComponents.starts(with: prefix) else { return nil }
+        return url.pathComponents.dropFirst(prefix.count).joined(separator: "/")
+    }
+    private var projectSidebarSnapshot: SavedWorkspace.Sidebar? {
+        guard projectRoot != nil else { return nil }
+        let expanded = (0..<outline.numberOfRows).compactMap { row -> String? in
+            guard let item = outline.item(atRow: row) as? ProjectItem, outline.isItemExpanded(item) else { return nil }
+            return projectRelativePath(item.url)
+        }
+        let selected = outline.selectedRow >= 0 ? (outline.item(atRow: outline.selectedRow) as? ProjectItem).flatMap { projectRelativePath($0.url) } : nil
+        return .init(expandedFolders: expanded, selectedPath: selected,
+                     scrollY: Double(outline.enclosingScrollView?.contentView.bounds.origin.y ?? 0))
+    }
+    private func restoreProjectSidebar(_ state: SavedWorkspace.Sidebar) {
+        guard let root = projectRoot else { return }
+        outline.collapseItem(root, collapseChildren: true)
+        let expanded = Set(state.expandedFolders)
+        func expand(_ node: ProjectItem) {
+            guard let path = projectRelativePath(node.url), expanded.contains(path) else { return }
+            outline.expandItem(node)
+            for child in node.children where child.isDirectory { expand(child) }
+        }
+        expand(root)
+        if let selected = state.selectedPath,
+           let row = (0..<outline.numberOfRows).first(where: { row in
+               (outline.item(atRow: row) as? ProjectItem).flatMap { projectRelativePath($0.url) } == selected
+           }) { outline.selectRowIndexes(IndexSet(integer: row), byExtendingSelection: false) }
+        else { outline.deselectAll(nil) }
+    }
+    private func scrollProjectSidebar(to y: Double) {
+        window.contentView?.layoutSubtreeIfNeeded()
+        guard let scroll = outline.enclosingScrollView else { return }
+        scroll.contentView.scroll(to: NSPoint(x: 0, y: min(CGFloat(y), max(0, outline.bounds.height - scroll.contentSize.height))))
+        scroll.reflectScrolledClipView(scroll.contentView)
     }
 
     func outlineView(_ outlineView: NSOutlineView, numberOfChildrenOfItem item: Any?) -> Int {
@@ -2792,6 +2843,7 @@ final class EditorWorkspace: NSObject, NSWindowDelegate,
         guard workspace.restoreSession(session, preservingCleanDocuments: existing != nil || session.workspace != nil) else {
             throw EditorFailure.invalidEdit("Draft could not be restored; backup retained.")
         }
+        if let saved = session.workspace { workspace.restoreDesktopPresentation(saved) }
         // Transfer recovery ownership only after the replacement backup is on
         // disk. A crash during restore cannot silently consume the only copy.
         workspace.setAutoRecovery(true, directory: isOwnedBackup ? sourceDirectory : applicationOwner.recoveryDirectory)
@@ -3622,6 +3674,8 @@ final class EditorWorkspace: NSObject, NSWindowDelegate,
             ("Preferences: Load Configuration", "Font, tabs, theme and shortcuts", { [weak self] in self?.loadConfiguration() }),
             ("Preferences: Save Configuration", "Save supported editor settings", { [weak self] in self?.saveConfiguration() }),
             ("Preferences: Reset Configuration", "Restore editor defaults", { [weak self] in self?.resetConfiguration() }),
+            ("Preferences: Remember Previous Workspace", "Toggle automatic workspace restoration", { [weak self] in self?.applicationOwner?.toggleRememberWorkspace() }),
+            ("File: Reopen Last Folder", "Last successfully opened project folder", { [weak self] in self?.applicationOwner?.reopenLastFolder() }),
             ("Font: Larger", "⌘+", { [weak self] in self?.increaseFontSize() }),
             ("Font: Smaller", "⌘−", { [weak self] in self?.decreaseFontSize() }),
             ("Font: Reset", "", { [weak self] in self?.resetFontSize() }),
@@ -3651,6 +3705,10 @@ final class EditorWorkspace: NSObject, NSWindowDelegate,
             ("Text: Lowercase", "Selections or current word", { [weak self] in self?.lowercase() }),
         ]
         var choices = commands.map { PaletteChoice(title: $0.0, detail: $0.1, action: $0.2) }
+        for url in applicationOwner?.recentFolderURLs ?? [] {
+            choices.append(PaletteChoice(title: "File: Open Recent Folder: " + url.lastPathComponent, detail: url.path,
+                                         action: { [weak self] in self?.applicationOwner?.openRecentFolder(url) }))
+        }
         func appendMenu(_ menu: NSMenu, prefix: String) {
             for item in menu.items {
                 if let child = item.submenu { appendMenu(child, prefix: prefix + item.title + ": ") }
