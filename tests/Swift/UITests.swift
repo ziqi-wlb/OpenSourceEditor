@@ -513,6 +513,10 @@ enum UITestRunner {
         do {
             delegate.selectDocument(0)
             delegate.currentDocument?.setTextUndoably("// Independent editor\nimport Foundation\n\nlet greeting = \"你好，世界 😀\"\nprint(greeting)\n", actionName: "Capture")
+            // This fixture checks two views of one file; ordinary tab switching
+            // now replaces only the active pane and may show different files.
+            _ = delegate.executeCommand("single_pane")
+            _ = delegate.executeCommand("split_right")
             await pump(0.3)
             delegate.window.contentView?.layoutSubtreeIfNeeded()
             let actualViews = textViews(delegate.window.contentView!).filter { $0.textStorage === delegate.currentDocument?.storage }

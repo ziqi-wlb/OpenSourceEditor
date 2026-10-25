@@ -4,6 +4,12 @@
 
 Author: ziqi-wlb · [550461053@qq.com](mailto:550461053@qq.com)
 
+## 0.9.6
+
+- Add left/right and top/bottom editor splits with a titlebar button, per-pane file selectors, focus switching and Single Pane.
+- Keep independent selections and scrolling while editing shared or different documents; reuse unchanged editor views.
+- Restore editor split direction, proportions, pane files and cursors through workspaces and draft/session recovery.
+
 ## 0.9.5
 
 - Show a native workspace home for new windows and folder-only projects, with quick file/note/search actions and recent entries.

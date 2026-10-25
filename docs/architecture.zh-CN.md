@@ -12,6 +12,7 @@ flowchart TB
     app --> workspace[EditorWorkspace：窗口与命令]
     app --> information[ProjectInformation：介绍与版本说明]
     workspace --> home[WorkspaceHomeView：原生快捷操作]
+    workspace --> splits[EditorSplitToolbar：区域文件和布局]
     workspace --> doc[EditorDocument：文本与磁盘身份]
     workspace --> panes[EditorPane：TextKit 编辑视图]
     panes --> storage[NSTextStorage：共享文本]
@@ -82,3 +83,5 @@ Markdown 显式预览立即启动，后续输入使用防抖。Foundation 拥有
 Preferences → Remember Previous Workspace 默认开启，同时恢复文件夹与文件标签。关闭后重开进入空白窗口，保留可手动恢复的草稿与独立的最近文件夹历史。参见[工作区恢复](workspace-restoration.zh-CN.md)。
 
 新窗口和纯文件夹项目显示带快捷操作与最近记录的原生主页，关闭最后一个文件标签后回到主页。通过项目标题/窗口标题栏的侧栏图标或 ⌃⌘B 扩大主区域。参见[工作区主页](workspace-home.zh-CN.md)。
+
+macOS 0.9.6 支持左右/上下编辑区切分，各区域独立选择文件并保留光标、滚动位置。通过标题栏图标或 ⌥⌘2 切分、⌥⌘3 切换区域、⌥⌘1 保留活动区域并合并；工作区/会话恢复保留区域状态。参见[编辑区切分](editor-splits.zh-CN.md)。

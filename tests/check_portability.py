@@ -22,6 +22,6 @@ assert not list((release/'Resources').rglob('*.swift'))
 symbols=subprocess.check_output(['nm',str(release/'MacOS/source-editor')],text=True,stderr=subprocess.DEVNULL)
 for name in ('UITestRunner','CoreTestRunner','BenchmarkRunner','ServiceTestRunner',
              'PreferencesTestRunner','DocumentSettingsTestRunner','ContractTestRunner',
-             'LifecycleUITests','ContextMenuUITests','MultiWindowUITests','MultiWindowQuitTests','PerformanceTests','ProductFeatureTests','ProductUITests','DailyFeatureTests','DailyUITests','DraftRecoveryUITests','RecoveryPerformanceTests','WorkspaceRestorationTests','WorkspaceHomeUITests'):
+             'LifecycleUITests','ContextMenuUITests','MultiWindowUITests','MultiWindowQuitTests','PerformanceTests','ProductFeatureTests','ProductUITests','DailyFeatureTests','DailyUITests','DraftRecoveryUITests','RecoveryPerformanceTests','WorkspaceRestorationTests','WorkspaceHomeUITests','EditorSplitUITests'):
     assert name not in symbols, 'Test code bundled in release'
 print('Portable source paths and production-only bundle verified')

@@ -36,6 +36,7 @@ struct SavedWorkspace: Codable {
     var statusVisible: Bool? = nil
     var lineNumbersVisible: Bool? = nil
     var sidebar: Sidebar? = nil
+    var editorLayout: SavedEditorLayout? = nil
 }
 
 struct SavedDesktop: Codable {
@@ -50,6 +51,7 @@ struct SavedDesktop: Codable {
         }
         for workspace in workspaces + (lastClosedWorkspace.map { [$0] } ?? []) {
             try workspace.sidebar?.validate()
+            try workspace.editorLayout?.validate()
             if let name = workspace.recoveryFileName,
                (name != URL(fileURLWithPath: name).lastPathComponent || !name.hasSuffix(".json")) {
                 throw EditorFailure.invalidEdit("Invalid recovery file identity.")

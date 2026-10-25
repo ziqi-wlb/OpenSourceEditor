@@ -7,6 +7,23 @@
   },
   "releases": [
     {
+      "version": "0.9.6",
+      "changes": [
+        {
+          "english": "Add left/right and top/bottom editor splits with a titlebar button, per-pane file selectors, focus switching and Single Pane.",
+          "chinese": "增加左右、上下编辑区切分，提供标题栏按钮、各区域文件选择、焦点切换与合并。"
+        },
+        {
+          "english": "Keep independent selections and scrolling while editing shared or different documents; reuse unchanged editor views.",
+          "chinese": "同一文件或不同文件分别保留选区与滚动位置，复用未变更的编辑视图。"
+        },
+        {
+          "english": "Restore editor split direction, proportions, pane files and cursors through workspaces and draft/session recovery.",
+          "chinese": "工作区及草稿/会话恢复保留切分方向、比例、各区域文件与光标。"
+        }
+      ]
+    },
+    {
       "version": "0.9.5",
       "changes": [
         {

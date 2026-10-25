@@ -371,6 +371,7 @@ private final class SingleColumnScrollView: NSScrollView {
 /// NSSplitView's internal divider state cannot track externally assigned frames.
 private final class EditorSplitView: NSView {
     private var fraction: CGFloat = 0.5
+    var positionFraction: CGFloat { fraction }
     var isVertical = false
     var dividerStyle = NSSplitView.DividerStyle.thin
     var dividerThickness: CGFloat { dividerStyle == .thin ? 1 : 6 }
@@ -806,6 +807,7 @@ final class EditorWorkspace: NSObject, NSWindowDelegate,
     private var panes: [EditorPane] = []
     private var activePane = 0
     private var splitEnabled = false
+    private var companionDocument: EditorDocument?
     private var projectRoot: ProjectItem?
     private var projectDocument: EditorProject?
     private var projectFiles: [URL] = []
@@ -820,6 +822,8 @@ final class EditorWorkspace: NSObject, NSWindowDelegate,
     private let workspaceHome = WorkspaceHomeView(frame: .zero)
     private let sidebarToggleButton = NSButton(title: "Toggle Sidebar", target: nil, action: nil)
     private let sidebarHeaderButton = NSButton(title: "Hide Sidebar", target: nil, action: nil)
+    private let splitButton = NSButton(title: "Split Editor", target: nil, action: nil)
+    private let splitToolbar = EditorSplitToolbar(frame: .zero)
     private let markdownBar = NSStackView()
     private let markdownModes = NSSegmentedControl(labels: ["Edit", "Preview", "Side by Side"], trackingMode: .selectOne, target: nil, action: nil)
     private let markdownInfo = NSTextField(labelWithString: "Markdown")
@@ -1007,7 +1011,55 @@ final class EditorWorkspace: NSObject, NSWindowDelegate,
             frame: [Double(rect.origin.x), Double(rect.origin.y), Double(rect.width), Double(rect.height)],
             scrollY: Double(currentTextView?.enclosingScrollView?.contentView.bounds.origin.y ?? 0),
             recoveryFileName: recoveryName, tabsVisible: savedTabs, statusVisible: savedStatus,
-            lineNumbersVisible: savedLineNumbers, sidebar: projectSidebarSnapshot)
+            lineNumbersVisible: savedLineNumbers, sidebar: projectSidebarSnapshot,
+            editorLayout: editorLayoutSnapshot(indexedDocuments: documents.filter { $0.fileURL != nil }))
+    }
+
+    private func editorLayoutSnapshot(indexedDocuments: [EditorDocument]) -> SavedEditorLayout? {
+        guard splitEnabled, panes.count == 2 else { return nil }
+        return SavedEditorLayout(axis: editorSplit.isVertical ? .columns : .rows,
+            fraction: Double(editorSplit.positionFraction), activePane: activePane,
+            panes: panes.map { pane in
+                let origin = pane.scroll.contentView.bounds.origin
+                return .init(path: pane.document.fileURL?.path,
+                    documentIndex: indexedDocuments.firstIndex(where: { $0 === pane.document }),
+                    selections: Array(pane.textView.selectedRanges.prefix(4096)).map { [$0.rangeValue.location, $0.rangeValue.length] },
+                    scrollX: Double(max(0, origin.x)), scrollY: Double(max(0, origin.y)))
+            })
+    }
+
+    private func restoreEditorLayout(_ saved: SavedEditorLayout?, indexedDocuments: [EditorDocument?], restorePresentation: Bool = true) {
+        guard splitEnabled, let saved, (try? saved.validate()) != nil, let fallback = currentDocument else { return }
+        let visible = saved.panes.map { pane -> EditorDocument in
+            if let index = pane.documentIndex, indexedDocuments.indices.contains(index),
+               let document = indexedDocuments[index], documents.contains(where: { $0 === document }) { return document }
+            if let path = pane.path, let document = documents.first(where: { $0.fileURL?.path == path }) { return document }
+            return fallback
+        }
+        activePane = saved.activePane
+        selectedIndex = documents.firstIndex(where: { $0 === visible[activePane] }) ?? selectedIndex
+        companionDocument = visible[1 - activePane]
+        editorSplit.isVertical = saved.axis == .columns
+        editorSplit.useFraction(CGFloat(saved.fraction))
+        rebuildPanes()
+        if restorePresentation { restoreEditorPanePresentation(saved) }
+    }
+
+    private func restoreEditorPanePresentation(_ saved: SavedEditorLayout) {
+        guard (try? saved.validate()) != nil, panes.count == 2 else { return }
+        window.contentView?.layoutSubtreeIfNeeded()
+        for (pane, state) in zip(panes, saved.panes) {
+            let text = pane.document.storage.string
+            let length = pane.document.storage.length
+            let ranges = state.selections.compactMap { pair -> NSValue? in
+                guard pair.count == 2, pair[0] <= length, pair[1] <= length - pair[0],
+                      Range(NSRange(location: pair[0], length: pair[1]), in: text) != nil else { return nil }
+                return NSValue(range: NSRange(location: pair[0], length: pair[1]))
+            }
+            if !ranges.isEmpty { pane.textView.selectedRanges = ranges }
+            pane.scroll.contentView.scroll(to: NSPoint(x: state.scrollX, y: state.scrollY))
+            pane.scroll.reflectScrolledClipView(pane.scroll.contentView)
+        }
     }
 
     func restoreDesktop(_ saved: SavedWorkspace) {
@@ -1035,7 +1087,10 @@ final class EditorWorkspace: NSObject, NSWindowDelegate,
             documents = restored
             selectedIndex = restored.firstIndex { $0.fileURL?.path == saved.selectedPath } ?? 0
             splitEnabled = saved.split
+            companionDocument = nil; activePane = 0
             rebuildPanes(); rebuildTabs()
+            restoreEditorLayout(saved.editorLayout, indexedDocuments: saved.files.map { file in restored.first { $0.fileURL?.path == file.path } }, restorePresentation: false)
+            rebuildTabs()
         }
         if let path = saved.projectPath {
             let url = URL(fileURLWithPath: path, isDirectory: true)
@@ -1064,7 +1119,8 @@ final class EditorWorkspace: NSObject, NSWindowDelegate,
         }
         window.contentView?.layoutSubtreeIfNeeded()
         if let sidebar = saved.sidebar { scrollProjectSidebar(to: sidebar.scrollY) }
-        if let view = currentTextView { view.scroll(NSPoint(x: 0, y: min(CGFloat(saved.scrollY), max(0, view.bounds.height - (view.enclosingScrollView?.contentSize.height ?? 0))))) }
+        if let layout = saved.editorLayout { restoreEditorPanePresentation(layout) }
+        else if let view = currentTextView { view.scroll(NSPoint(x: 0, y: min(CGFloat(saved.scrollY), max(0, view.bounds.height - (view.enclosingScrollView?.contentSize.height ?? 0))))) }
         updateStatus()
     }
 
@@ -1081,7 +1137,6 @@ final class EditorWorkspace: NSObject, NSWindowDelegate,
     var projectFolderURL: URL? { projectRoot?.url }
 
     var currentTextView: NSTextView? {
-        if let text = window?.firstResponder as? EditorTextView, panes.contains(where: { $0.textView === text }) { return text }
         return panes.indices.contains(activePane) ? panes[activePane].textView : panes.first?.textView
     }
 
@@ -1452,6 +1507,11 @@ final class EditorWorkspace: NSObject, NSWindowDelegate,
         item(view, "Indent", #selector(indentSelection), "]")
         item(view, "Unindent", #selector(unindentSelection), "[")
         item(view, "Split Editor", #selector(toggleSplit), "2", [.command, .option])
+        item(view, "Split Right", #selector(splitRight))
+        item(view, "Split Down", #selector(splitDown))
+        item(view, "Open in Other Pane", #selector(openInOtherPane))
+        item(view, "Single Pane", #selector(joinPanes), "1", [.command, .option])
+        item(view, "Focus Next Pane", #selector(focusNextPane), "3", [.command, .option])
         view.addItem(.separator())
         item(view, "Toggle Markdown Preview", #selector(toggleMarkdownPreview), "v", [.command, .shift])
         item(view, "Markdown Preview to the Side", #selector(markdownToSide), "v", [.command, .option])
@@ -1549,9 +1609,14 @@ final class EditorWorkspace: NSObject, NSWindowDelegate,
         sidebarToggleButton.target = self; sidebarToggleButton.action = #selector(toggleSidebar)
         let accessory = NSTitlebarAccessoryViewController()
         accessory.layoutAttribute = .right
-        accessory.view = NSView(frame: NSRect(x: 0, y: 0, width: 40, height: 28))
+        accessory.view = NSView(frame: NSRect(x: 0, y: 0, width: 72, height: 28))
         sidebarToggleButton.frame = NSRect(x: 8, y: 2, width: 24, height: 24)
         accessory.view.addSubview(sidebarToggleButton)
+        EditorTheme.styleIconButton(splitButton, symbol: "rectangle.split.2x1", label: "Split Editor · ⌥⌘2")
+        splitButton.identifier = NSUserInterfaceItemIdentifier("workspace.splitEditor")
+        splitButton.target = self; splitButton.action = #selector(toggleSplit)
+        splitButton.frame = NSRect(x: 40, y: 2, width: 24, height: 24)
+        accessory.view.addSubview(splitButton)
         window.addTitlebarAccessoryViewController(accessory)
         window.center()
         window.setFrameAutosaveName("SourceEditor.Main")
@@ -1646,6 +1711,15 @@ final class EditorWorkspace: NSObject, NSWindowDelegate,
         status.style(foreground: EditorTheme.muted, background: EditorTheme.panel)
         makeMarkdownBar()
         makeFindBar()
+        splitToolbar.isHidden = true
+        splitToolbar.onDocument = { [weak self] index, document in
+            guard let self, !self.pendingTermination, !self.pendingWindowClose,
+                  let selected = self.documents.firstIndex(where: { $0 === document }) else { return }
+            self.activatePane(index)
+            self.selectDocument(selected)
+        }
+        splitToolbar.onAxis = { [weak self] axis in self?.setEditorSplit(axis) }
+        splitToolbar.onJoin = { [weak self] in self?.joinPanes() }
         noticeBar.orientation = .horizontal
         noticeBar.spacing = 8
         noticeBar.isHidden = true
@@ -1656,7 +1730,7 @@ final class EditorWorkspace: NSObject, NSWindowDelegate,
         let dismiss = NSButton(title: "×", target: self, action: #selector(dismissNotice))
         EditorTheme.styleIconButton(dismiss, symbol: "xmark", label: "Dismiss notification")
         for view in [noticeLabel, noticeButton, dismiss] { noticeBar.addArrangedSubview(view) }
-        for view in [tabScroll, noticeBar, markdownBar, findBar, workSplit, status] {
+        for view in [tabScroll, noticeBar, markdownBar, findBar, splitToolbar, workSplit, status] {
             view.translatesAutoresizingMaskIntoConstraints = true
             view.autoresizingMask = []
             editorArea.addSubview(view)
@@ -1672,7 +1746,9 @@ final class EditorWorkspace: NSObject, NSWindowDelegate,
             let searchHeight: CGFloat = self.findBar.isHidden ? 0 : self.replaceRow.isHidden ? 32 : 66
             self.findBar.frame = NSRect(x: 10, y: tabHeight + 2 + noticeHeight + markdownHeight, width: max(1, size.width - 20), height: searchHeight)
             let chrome = tabHeight + noticeHeight + markdownHeight + searchHeight
-            let top = chrome > 0 ? chrome + 4 : 0
+            let splitHeight: CGFloat = self.splitToolbar.isHidden ? 0 : self.splitToolbar.height(for: size.width)
+            self.splitToolbar.frame = NSRect(x: 0, y: chrome, width: size.width, height: splitHeight)
+            let top = chrome + splitHeight > 0 ? chrome + splitHeight + 4 : 0
             let footer: CGFloat = self.status.isHidden ? 0 : 31
             let workFrame = NSRect(x: 0, y: top, width: size.width, height: max(1, size.height - top - footer))
             if self.workSplit.frame != workFrame { self.workSplit.frame = workFrame; self.workSplit.needsLayout = true }
@@ -2155,7 +2231,8 @@ final class EditorWorkspace: NSObject, NSWindowDelegate,
             return markdownViewMode != .preview && currentDocument?.resolvedSyntax == .markdown && currentTextView?.hasMarkedText() == false
         case #selector(insertTimestamp): return markdownViewMode != .preview && currentTextView?.hasMarkedText() == false
         case #selector(saveAll): return documents.contains(where: \.isModified)
-        case #selector(saveFile), #selector(saveAs), #selector(showFind), #selector(showReplace), #selector(toggleSplit): return currentDocument != nil
+        case #selector(saveFile), #selector(saveAs), #selector(showFind), #selector(showReplace), #selector(toggleSplit), #selector(splitRight), #selector(splitDown), #selector(openInOtherPane): return currentDocument != nil
+        case #selector(joinPanes), #selector(focusNextPane): return splitEnabled && currentDocument != nil
         case #selector(saveSession): return !documents.isEmpty
         case #selector(toggleComment): return markdownViewMode != .preview && currentDocument.map { !["txt", "json"].contains($0.syntaxIdentifier) } == true
         case #selector(duplicateLines), #selector(deleteLines), #selector(moveLinesUp), #selector(moveLinesDown): return markdownViewMode != .preview && currentDocument != nil
@@ -2196,9 +2273,8 @@ final class EditorWorkspace: NSObject, NSWindowDelegate,
     func selectDocument(_ index: Int) {
         guard documents.indices.contains(index) else { return }
         if selectedIndex == index, panes.count == (splitEnabled ? 2 : 1),
-           panes.first?.document === documents[index], tabs.arrangedSubviews.count == documents.count {
-            activePane = 0
-            window.makeFirstResponder(panes.first?.textView)
+           panes.indices.contains(activePane), panes[activePane].document === documents[index], tabs.arrangedSubviews.count == documents.count {
+            focusContent()
             updateStatus()
             followCurrentFileInSidebar()
             return
@@ -2207,7 +2283,6 @@ final class EditorWorkspace: NSObject, NSWindowDelegate,
             selectionCache[ObjectIdentifier(document)] = text.selectedRanges
         }
         selectedIndex = index
-        activePane = 0
         rebuildPanes()
         rebuildTabs()
         updateStatus()
@@ -2216,15 +2291,22 @@ final class EditorWorkspace: NSObject, NSWindowDelegate,
     }
 
     private func rebuildPanes() {
+        let oldPanes = panes
         for view in editorSplit.arrangedSubviews { editorSplit.removeArrangedSubview(view); view.removeFromSuperview() }
         panes.removeAll()
-        guard let document = currentDocument else { refreshMarkdown(); refreshHome(); return }
-        for index in 0..<(splitEnabled ? 2 : 1) {
-            let pane = EditorPane(document: document, delegate: self) { [weak self] in
-                self?.activePane = index
-                self?.updateStatus()
+        guard let document = currentDocument else { companionDocument = nil; splitEnabled = false; activePane = 0; refreshMarkdown(); refreshHome(); return }
+        if !splitEnabled { activePane = 0; companionDocument = nil }
+        let other = companionDocument.flatMap { candidate in documents.contains(where: { $0 === candidate }) ? candidate : nil } ?? document
+        if splitEnabled { companionDocument = other }
+        let visible = splitEnabled ? (activePane == 1 ? [other, document] : [document, other]) : [document]
+        for (index, document) in visible.enumerated() {
+            let reused = oldPanes.indices.contains(index) && oldPanes[index].document === document
+            let pane = reused ? oldPanes[index] : EditorPane(document: document, delegate: self, focus: {})
+            pane.textView.onFocus = { [weak self, weak text = pane.textView] in
+                guard let self, let index = self.panes.firstIndex(where: { $0.textView === text }) else { return }
+                self.activatePane(index)
             }
-            if let ranges = selectionCache[ObjectIdentifier(document)] {
+            if !reused, let ranges = selectionCache[ObjectIdentifier(document)] {
                 let source = document.storage.string
                 let length = (source as NSString).length
                 let valid = ranges.filter { value in
@@ -2248,7 +2330,35 @@ final class EditorWorkspace: NSObject, NSWindowDelegate,
             editorSplit.addArrangedSubview(pane.scroll)
         }
         editorSplit.adjustSubviews()
-        editorSplit.useFraction(0.5)
+        refreshSplitControls()
+    }
+
+    private func activatePane(_ index: Int) {
+        guard !pendingTermination, !pendingWindowClose, panes.indices.contains(index),
+              let selected = documents.firstIndex(where: { $0 === panes[index].document }) else { return }
+        if activePane != index || selectedIndex != selected {
+            if panes.indices.contains(activePane) {
+                let previous = panes[activePane]
+                selectionCache[ObjectIdentifier(previous.document)] = previous.textView.selectedRanges
+            }
+            if splitEnabled { companionDocument = panes[1 - index].document }
+            activePane = index; selectedIndex = selected
+            rebuildTabs()
+            updateFindCount()
+            followCurrentFileInSidebar()
+        }
+        updateStatus()
+    }
+
+    private func refreshSplitControls() {
+        splitButton.isEnabled = currentDocument != nil && !pendingTermination && !pendingWindowClose
+        splitButton.state = splitEnabled ? .on : .off
+        splitButton.toolTip = (splitEnabled ? "Single Pane" : "Split Editor") + " · ⌥⌘2"
+        splitButton.setAccessibilityLabel(splitEnabled ? "Single Pane" : "Split Editor")
+        let hidden = !splitEnabled || currentDocument == nil || markdownViewMode == .preview || focusLayout != nil
+        if splitToolbar.isHidden != hidden { splitToolbar.isHidden = hidden; editorArea.needsLayout = true }
+        if splitEnabled, currentDocument != nil { splitToolbar.update(documents: documents, panes: panes.map(\.document), active: activePane, axis: editorSplit.isVertical ? .columns : .rows) }
+        else { splitToolbar.clearDocuments() }
     }
 
     private func rebuildTabs() {
@@ -2321,6 +2431,7 @@ final class EditorWorkspace: NSObject, NSWindowDelegate,
     }
 
     private func updateStatus() {
+        refreshSplitControls()
         let editing = currentDocument != nil
         for button in [status.encoding, status.lineEnding, status.indentation, status.syntax] { button.isHidden = !editing }
         status.needsLayout = true
@@ -2764,7 +2875,7 @@ final class EditorWorkspace: NSObject, NSWindowDelegate,
             documents: documents.map { document in
                 EditorSession.Document(document: document,
                     ranges: selectionCache[ObjectIdentifier(document)]?.map(\.rangeValue) ?? [NSRange(location: 0, length: 0)])
-            })
+            }, editorLayout: editorLayoutSnapshot(indexedDocuments: documents))
     }
 
     @objc private func toggleAutoRecovery() { setAutoRecovery(recovery == nil) }
@@ -2817,7 +2928,8 @@ final class EditorWorkspace: NSObject, NSWindowDelegate,
         let selected = modified.firstIndex(where: { $0 === currentDocument }) ?? 0
         return EditorSession(projectPath: projectRoot?.url.path, selectedIndex: selected, split: splitEnabled,
             documents: modified.map { EditorSession.Document(document: $0,
-                ranges: Array((selectionCache[ObjectIdentifier($0)]?.map(\.rangeValue) ?? []).prefix(4096))) }, workspace: desktopSnapshot)
+                ranges: Array((selectionCache[ObjectIdentifier($0)]?.map(\.rangeValue) ?? []).prefix(4096))) }, workspace: desktopSnapshot,
+            editorLayout: editorLayoutSnapshot(indexedDocuments: modified))
     }
 
     private func finishRecovery(forClose: Bool = false) {
@@ -2996,6 +3108,7 @@ final class EditorWorkspace: NSObject, NSWindowDelegate,
             if (try? url.resourceValues(forKeys: [.isDirectoryKey]).isDirectory) == true { setProject(url) }
         }
         splitEnabled = session.split
+        companionDocument = nil
         // Prevent selectDocument from caching the already-disposed selection over
         // a restored document before it creates the new panes.
         let selectedDraft = restored[session.selectedIndex].0
@@ -3005,6 +3118,8 @@ final class EditorWorkspace: NSObject, NSWindowDelegate,
            let index = documents.firstIndex(where: { $0.fileURL?.path == selectedPath }) { selectedIndex = index }
         activePane = 0
         rebuildPanes()
+        if let layout = session.editorLayout { restoreEditorLayout(layout, indexedDocuments: restored.map(\.0)) }
+        else { restoreEditorLayout(session.workspace?.editorLayout, indexedDocuments: []) }
         rebuildTabs()
         outline.reloadData()
         updateStatus()
@@ -3183,6 +3298,9 @@ final class EditorWorkspace: NSObject, NSWindowDelegate,
         guard !pendingTermination, !pendingWindowClose else { return false }
         guard documents.indices.contains(index), confirmClose(documents[index]) else { return false }
         let oldSelected = selectedIndex
+        let activeDocument = currentDocument
+        let closedDocument = documents[index]
+        if let activeDocument, let text = currentTextView { selectionCache[ObjectIdentifier(activeDocument)] = text.selectedRanges }
         if let url = documents[index].fileURL {
             closedFileURLs.removeAll { $0 == url }
             closedFileURLs.append(url)
@@ -3192,11 +3310,13 @@ final class EditorWorkspace: NSObject, NSWindowDelegate,
         markdownModeCache.removeValue(forKey: ObjectIdentifier(documents[index]))
         let closedIdentity = ObjectIdentifier(documents[index])
         documents.remove(at: index)
+        if companionDocument === closedDocument { companionDocument = nil }
         diskChecks.removeValue(forKey: closedIdentity)?.cancel()
         diskChanges.removeValue(forKey: closedIdentity)
         refreshFileMonitor()
-        if documents.isEmpty { selectedIndex = 0; rebuildPanes(); rebuildTabs(); updateStatus() }
-        else { selectDocument(min(documents.count - 1, index < oldSelected ? oldSelected - 1 : oldSelected)) }
+        selectedIndex = activeDocument.flatMap { active in documents.firstIndex(where: { $0 === active }) }
+            ?? max(0, min(documents.count - 1, index < oldSelected ? oldSelected - 1 : oldSelected))
+        rebuildPanes(); rebuildTabs(); updateStatus(); focusContent()
         if projectRoot == nil { outline.reloadData() }
         updateRecoverySnapshot()
         return true
@@ -3332,6 +3452,12 @@ final class EditorWorkspace: NSObject, NSWindowDelegate,
             guard let self, let document, let index = self.documents.firstIndex(where: { $0 === document }) else { return }
             self.closeDocument(index)
         })
+        for (title, axis) in [("Split Right", EditorSplitAxis.columns), ("Split Down", .rows)] {
+            menu.addItem(actionItem(title) { [weak self, weak document] in
+                guard let self, let document else { return }
+                self.splitDocument(document, axis: axis)
+            })
+        }
         for scope in TabCloseScope.allCases {
             menu.addItem(actionItem(scope.title, enabled: !closeCandidates(scope, anchor: document).isEmpty) { [weak self, weak document] in
                 guard let self, let document else { return }
@@ -3555,6 +3681,7 @@ final class EditorWorkspace: NSObject, NSWindowDelegate,
     func setMarkdownMode(_ mode: MarkdownViewMode) {
         guard !pendingTermination, !pendingWindowClose, let document = currentDocument, document.syntaxIdentifier == "md" else { return }
         markdownModeCache[ObjectIdentifier(document)] = mode
+        refreshSplitControls()
         if mode == .preview { findBar.isHidden = true; editorArea.needsLayout = true }
         refreshMarkdown()
         contentSplit.adjustSubviews()
@@ -3581,15 +3708,53 @@ final class EditorWorkspace: NSObject, NSWindowDelegate,
     #if EDITOR_TESTS
     var markdownPreviewForTesting: MarkdownPreviewView? { markdownPreview }
     var projectSearchForTesting: ProjectSearchPanel? { projectSearchPanel }
+    var paneViewsForTesting: [NSTextView] { panes.map(\.textView) }
+    var editorLayoutForTesting: SavedEditorLayout? { editorLayoutSnapshot(indexedDocuments: documents) }
     #endif
 
     @objc private func toggleSplit() {
-        if let document = currentDocument, let text = currentTextView { selectionCache[ObjectIdentifier(document)] = text.selectedRanges }
-        splitEnabled.toggle()
-        activePane = 0
+        if splitEnabled { joinPanes() } else { setEditorSplit(.columns) }
+    }
+
+    private func setEditorSplit(_ axis: EditorSplitAxis) {
+        guard !pendingTermination, !pendingWindowClose, let document = currentDocument else { return }
+        if let view = currentTextView { selectionCache[ObjectIdentifier(document)] = view.selectedRanges }
+        if !splitEnabled { companionDocument = document; activePane = 0; editorSplit.useFraction(0.5) }
+        splitEnabled = true
+        editorSplit.isVertical = axis == .columns
+        for document in [document, companionDocument].compactMap({ $0 }) { markdownModeCache[ObjectIdentifier(document)] = .edit }
         rebuildPanes()
         updateStatus()
         focusContent()
+    }
+
+    @objc private func splitRight() { setEditorSplit(.columns) }
+    @objc private func splitDown() { setEditorSplit(.rows) }
+    private func splitDocument(_ document: EditorDocument, axis: EditorSplitAxis) {
+        guard !pendingTermination, !pendingWindowClose,
+              let index = documents.firstIndex(where: { $0 === document }) else { return }
+        setEditorSplit(axis)
+        activatePane(1 - activePane)
+        selectDocument(index)
+    }
+    @objc private func joinPanes() {
+        guard !pendingTermination, !pendingWindowClose, splitEnabled else { return }
+        for pane in panes { selectionCache[ObjectIdentifier(pane.document)] = pane.textView.selectedRanges }
+        if panes.indices.contains(activePane), activePane != 0 { panes.swapAt(0, activePane) }
+        splitEnabled = false; companionDocument = nil; activePane = 0
+        rebuildPanes(); updateStatus(); focusContent()
+    }
+    @objc private func focusNextPane() {
+        guard !pendingTermination, !pendingWindowClose, splitEnabled, panes.count == 2 else { return }
+        if markdownViewMode == .preview { setMarkdownMode(.edit) }
+        let next = 1 - activePane
+        window.makeFirstResponder(panes[next].textView)
+    }
+    @objc private func openInOtherPane() {
+        guard !pendingTermination, !pendingWindowClose, !documents.isEmpty else { return }
+        let index = (selectedIndex + 1) % documents.count
+        if !splitEnabled { setEditorSplit(.columns) }
+        focusNextPane(); selectDocument(index)
     }
 
     @objc private func toggleSidebar() {
@@ -3657,6 +3822,7 @@ final class EditorWorkspace: NSObject, NSWindowDelegate,
         for pane in panes { pane.scroll.rulersVisible = false }
         projectSplit.adjustSubviews(); workSplit.adjustSubviews(); editorArea.needsLayout = true
         updateSidebarToggle()
+        refreshSplitControls()
         focusContent()
         focusEnteredFullScreen = !window.styleMask.contains(.fullScreen)
         if focusEnteredFullScreen { toggleFullScreen() }
@@ -3673,6 +3839,7 @@ final class EditorWorkspace: NSObject, NSWindowDelegate,
         projectSplit.adjustSubviews(); workSplit.adjustSubviews(); editorArea.needsLayout = true
         refreshMarkdown(); followCurrentFileInSidebar()
         updateSidebarToggle()
+        refreshSplitControls()
         focusContent()
     }
 
@@ -3724,6 +3891,11 @@ final class EditorWorkspace: NSObject, NSWindowDelegate,
             ("File: Close Tab", "⌘W", { [weak self] in self?.closeTab() }),
             ("File: Reopen Closed File", "⇧⌘T", { [weak self] in self?.reopenClosedFile() }),
             ("View: Split Editor", "⌥⌘2 · shared document", { [weak self] in self?.toggleSplit() }),
+            ("View: Split Right", "Two independent editor panes", { [weak self] in self?.splitRight() }),
+            ("View: Split Down", "Top and bottom editor panes", { [weak self] in self?.splitDown() }),
+            ("View: Open in Other Pane", "Compare another open file", { [weak self] in self?.openInOtherPane() }),
+            ("View: Single Pane", "⌥⌘1 · keep the active editor", { [weak self] in self?.joinPanes() }),
+            ("View: Focus Next Pane", "⌥⌘3", { [weak self] in self?.focusNextPane() }),
             ("Markdown: Toggle Preview", "⇧⌘V", { [weak self] in self?.toggleMarkdownPreview() }),
             ("Markdown: Preview to the Side", "⌥⌘V", { [weak self] in self?.markdownToSide() }),
             ("Markdown: Document Outline", "Render the current document", { [weak self] in self?.showMarkdownOutline() }),
@@ -4069,6 +4241,11 @@ final class EditorWorkspace: NSObject, NSWindowDelegate,
         case "copy_file_name": copyFileName()
         case "reveal_in_side_bar": revealCurrentFileInSidebar()
         case "split": toggleSplit()
+        case "split_right": splitRight()
+        case "split_down": splitDown()
+        case "single_pane": joinPanes()
+        case "focus_next_pane": focusNextPane()
+        case "open_other_pane": openInOtherPane()
         case "markdown_preview": toggleMarkdownPreview()
         case "markdown_side": markdownToSide()
         case "markdown_edit": setMarkdownMode(.edit)

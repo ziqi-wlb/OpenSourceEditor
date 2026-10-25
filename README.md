@@ -95,3 +95,5 @@ Results and screenshots stay in `.build/test-results/`. All tests use owned temp
 Preferences → Remember Previous Workspace defaults on and restores folders as well as file tabs. Turning it off starts blank while retaining backups for manual recovery and independent recent folder history. See [workspace restoration](docs/workspace-restoration.md).
 
 New windows and folder-only projects show a native home with quick actions and recent entries. Close the last file tab to return home. Use the sidebar icons in the project header/titlebar or ⌃⌘B to expand the main area. See [workspace home](docs/workspace-home.md).
+
+macOS 0.9.6 supports left/right and top/bottom editor splits with independent file selectors, cursors and scrolling. Use the titlebar split icon or ⌥⌘2; ⌥⌘3 focuses the other pane and ⌥⌘1 keeps the active single editor. Workspace/session restoration retains pane state. See [editor splits](docs/editor-splits.md).

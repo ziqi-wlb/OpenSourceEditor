@@ -40,6 +40,7 @@ struct EditorSession: Codable {
     // Optional additions keep existing Save Session and crash snapshots readable.
     var closedNormally: Bool? = nil
     var workspace: SavedWorkspace? = nil
+    var editorLayout: SavedEditorLayout? = nil
     static func load(_ url: URL) throws -> EditorSession {
         let file = try FileHandle(forReadingFrom: url); defer { try? file.close() }
         let data = try file.read(upToCount: 32 * 1024 * 1024 + 1) ?? Data()
@@ -48,6 +49,7 @@ struct EditorSession: Codable {
         guard result.version == 1, !result.documents.isEmpty, result.documents.count <= 256,
               result.documents.indices.contains(result.selectedIndex) else { throw EditorFailure.invalidEdit("Invalid or unsupported session.") }
         if let workspace = result.workspace { try SavedDesktop(workspaces: [workspace]).validate() }
+        try result.editorLayout?.validate()
         return result
     }
     func save(_ url: URL) throws {
