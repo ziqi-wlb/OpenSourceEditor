@@ -79,3 +79,5 @@ python3 scripts/export_source.py .build/SourceEditor-source.tar.gz --with-tests
 基础词法规则并非完整 Sublime/TextMate 语法。LSP、完整片段、矩形选择、终端、Git 差异、公式/Mermaid/PDF、自动更新及签名公证尚不完整。原生 IME、VoiceOver、长期使用、多屏、物理 Intel 和 Windows GUI 仍需专项验收。Windows 功能较少；macOS 通过测试不代表 Windows 完成。参见 [功能与限制](docs/features.zh-CN.md)、[产品就绪](docs/product-readiness.zh-CN.md)。项目所有者尚未选择开源许可证。
 
 Preferences → Remember Previous Workspace 默认开启，同时恢复文件夹与文件标签。关闭后重开进入空白窗口，保留可手动恢复的草稿与独立的最近文件夹历史。参见[工作区恢复](docs/workspace-restoration.zh-CN.md)。
+
+新窗口和纯文件夹项目显示带快捷操作与最近记录的原生主页，关闭最后一个文件标签后回到主页。通过项目标题/窗口标题栏的侧栏图标或 ⌃⌘B 扩大主区域。参见[工作区主页](docs/workspace-home.zh-CN.md)。

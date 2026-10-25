@@ -29,3 +29,5 @@ Native acceptance includes independent toggles, actual fullscreen entry/exit, me
 The final `bilingual-focus-093-verified` gate passed 646 checks with 13 explicit contract skips. Its 79 document-workspace UI checks include the scenarios above; production digests and the Focus Mode screenshot match macOS 0.9.3. Universal slices compiled and the Intel version entry passed under Rosetta. No new runtime memory or latency measurement is claimed.
 
 Preferences → Remember Previous Workspace defaults on and restores folders as well as file tabs. Turning it off starts blank while retaining backups for manual recovery and independent recent folder history. See [workspace restoration](workspace-restoration.md).
+
+New windows and folder-only projects show a native home with quick actions and recent entries. Close the last file tab to return home. Use the sidebar icons in the project header/titlebar or ⌃⌘B to expand the main area. See [workspace home](workspace-home.md).

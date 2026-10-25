@@ -9,6 +9,7 @@
 | macOS / Windows 功能矩阵与快捷入口 | [Features](features.zh-CN.md) |
 | 显示开关、全屏与专注模式 | [布局](layout.zh-CN.md) |
 | 作者联系与版本历史 | [版本说明](../RELEASE_NOTES.zh-CN.md) |
+| 工作区主页与侧栏按钮 | [工作区主页与侧栏按钮](workspace-home.zh-CN.md) |
 | 工作区恢复 | [工作区恢复](workspace-restoration.zh-CN.md) |
 | 开发、测试、源码分发与贡献 | [Development](development.zh-CN.md) |
 | 退出保留草稿、重启恢复与恢复原件 | [Draft recovery](draft-recovery.zh-CN.md) |

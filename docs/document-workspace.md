@@ -71,3 +71,5 @@ The final macOS 0.7.0 universal gate passed 450 checks, including 34 document-wo
 See [product acceptance](product-readiness.md), [current resource measurements](document-workspace-performance.md) and [earlier text-engine measurements](performance-optimization.md). These checks do not replace manual IME, VoiceOver, prolonged editing, physical Intel or Windows GUI acceptance.
 
 Preferences → Remember Previous Workspace defaults on and restores folders as well as file tabs. Turning it off starts blank while retaining backups for manual recovery and independent recent folder history. See [workspace restoration](workspace-restoration.md).
+
+New windows and folder-only projects show a native home with quick actions and recent entries. Close the last file tab to return home. Use the sidebar icons in the project header/titlebar or ⌃⌘B to expand the main area. See [workspace home](workspace-home.md).

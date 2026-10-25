@@ -26,3 +26,5 @@ The UI gate exercises real menu actions, folder-only close/Dock reopen, Unicode 
 See [development](development.md), [architecture](architecture.md), [layout](layout.md) and [release notes](../RELEASE_NOTES.md).
 
 The final `workspace-094-final` gate passed 708 checks with 13 explicit contract skips, including 20 native workspace and 32 separate-process checks. The accepted Universal release and source hashes match macOS 0.9.4; the restored-workspace image is captured from the native content view.
+
+New windows and folder-only projects show a native home with quick actions and recent entries. Close the last file tab to return home. Use the sidebar icons in the project header/titlebar or ⌃⌘B to expand the main area. See [workspace home](workspace-home.md).

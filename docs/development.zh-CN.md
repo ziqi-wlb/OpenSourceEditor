@@ -79,3 +79,5 @@ python3 scripts/export_source.py .build/SourceEditor-source.tar.gz --with-tests
 GitHub Actions 已配置 macOS Universal 和 Windows MSVC 构建/编码检查；本地运行不等于云端 CI 已执行。仓库尚未选择 LICENSE，当前不能声称已经完成正式开源授权；维护者应确定许可证后将 LICENSE 纳入发行源码。
 
 Preferences → Remember Previous Workspace 默认开启，同时恢复文件夹与文件标签。关闭后重开进入空白窗口，保留可手动恢复的草稿与独立的最近文件夹历史。参见[工作区恢复](workspace-restoration.zh-CN.md)。
+
+新窗口和纯文件夹项目显示带快捷操作与最近记录的原生主页，关闭最后一个文件标签后回到主页。通过项目标题/窗口标题栏的侧栏图标或 ⌃⌘B 扩大主区域。参见[工作区主页](workspace-home.zh-CN.md)。

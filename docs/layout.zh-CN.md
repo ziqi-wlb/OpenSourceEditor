@@ -29,3 +29,5 @@ View 菜单可独立显示/隐藏左侧目录、文件标签栏、状态栏和�
 最终 `bilingual-focus-093-verified` 验收通过 646 项、明确跳过 13 项合同向量；其中 79 项工作区 UI 包含上述场景，生产摘要和专注模式截图匹配 macOS 0.9.3。Universal 两切片编译，Intel 版本入口在 Rosetta 通过。本次未新增运行内存或响应延迟测量。
 
 Preferences → Remember Previous Workspace 默认开启，同时恢复文件夹与文件标签。关闭后重开进入空白窗口，保留可手动恢复的草稿与独立的最近文件夹历史。参见[工作区恢复](workspace-restoration.zh-CN.md)。
+
+新窗口和纯文件夹项目显示带快捷操作与最近记录的原生主页，关闭最后一个文件标签后回到主页。通过项目标题/窗口标题栏的侧栏图标或 ⌃⌘B 扩大主区域。参见[工作区主页](workspace-home.zh-CN.md)。

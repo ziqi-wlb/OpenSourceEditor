@@ -34,7 +34,7 @@ if let flag = arguments.firstIndex(of: "--contract-test"), flag + 1 < arguments.
 if arguments.contains("--benchmark") { exit(BenchmarkRunner.run()) }
 let application = NSApplication.shared
 application.setActivationPolicy(.regular)
-if let flag = arguments.first(where: { $0.hasPrefix("--workspace-restart-write=") || $0.hasPrefix("--workspace-restart-read=") || $0.hasPrefix("--workspace-ui-test=") }) {
+if let flag = arguments.first(where: { $0.hasPrefix("--workspace-restart-write=") || $0.hasPrefix("--workspace-restart-read=") || $0.hasPrefix("--workspace-ui-test=") || $0.hasPrefix("--home-ui-test=") }) {
     setbuf(stdout, nil)
     let directory = URL(fileURLWithPath: String(flag.split(separator: "=", maxSplits: 1)[1]), isDirectory: true)
     let mode = arguments.first(where: { $0.hasPrefix("--workspace-mode=") }).map { String($0.dropFirst("--workspace-mode=".count)) } ?? "closed"
@@ -44,6 +44,7 @@ if let flag = arguments.first(where: { $0.hasPrefix("--workspace-restart-write="
                 do { try await WorkspaceRestorationTests.prepareRestart(directory: directory, mode: mode) }
                 catch { fputs(error.localizedDescription, stderr); exit(1) }
             } else if flag.hasPrefix("--workspace-restart-read=") { exit(await WorkspaceRestorationTests.readRestart(directory: directory, mode: mode)) }
+            else if flag.hasPrefix("--home-ui-test=") { exit(await WorkspaceHomeUITests.run(directory: directory)) }
             else { exit(await WorkspaceRestorationTests.run(directory: directory)) }
         }
     }

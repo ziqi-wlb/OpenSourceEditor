@@ -86,7 +86,7 @@ final class EditorAppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate, 
         }
         workspace.window.makeKeyAndOrderFront(nil)
         workspace.activateMenus()
-        workspace.window.makeFirstResponder(workspace.currentTextView)
+        workspace.focusContent()
         return workspace
     }
 
@@ -111,7 +111,8 @@ final class EditorAppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate, 
     @objc func newWindowForTab(_ sender: Any?) { newWindow() }
 
     var recentFolderURLs: [URL] { recentFolders.urls }
-    func noteRecentFolder(_ url: URL) { recentFolders.note(url) }
+    func noteRecentFolder(_ url: URL) { recentFolders.note(url); refreshHomes() }
+    func refreshHomes() { for workspace in workspaces { workspace.refreshHome() } }
     func relocateRecentFolders(from source: URL, to destination: URL) { recentFolders.relocate(from: source, to: destination) }
     func openRecentFolder(_ url: URL) {
         let url = url.standardizedFileURL.resolvingSymlinksInPath()
@@ -127,7 +128,7 @@ final class EditorAppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate, 
     }
     @objc func reopenLastFolder() { if let url = recentFolders.urls.first { openRecentFolder(url) } }
     @objc private func openRecentFolderMenuItem(_ sender: NSMenuItem) { if let url = sender.representedObject as? URL { openRecentFolder(url) } }
-    @objc private func clearRecentFolders() { recentFolders.clear() }
+    @objc private func clearRecentFolders() { recentFolders.clear(); refreshHomes() }
     func addFolderMenuItems(to menu: NSMenu) {
         let last = NSMenuItem(title: "Reopen Last Folder", action: #selector(reopenLastFolder), keyEquivalent: "")
         last.target = self; menu.addItem(last)

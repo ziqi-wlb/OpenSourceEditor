@@ -77,3 +77,5 @@ Exports include production source, resources, build scripts, tests and bilingual
 GitHub Actions is configured for Universal macOS and Windows MSVC builds/encoding checks. Local success does not establish cloud execution. No LICENSE has been selected; the maintainer must select and include one before claiming formal open-source licensing.
 
 Preferences → Remember Previous Workspace defaults on and restores folders as well as file tabs. Turning it off starts blank while retaining backups for manual recovery and independent recent folder history. See [workspace restoration](workspace-restoration.md).
+
+New windows and folder-only projects show a native home with quick actions and recent entries. Close the last file tab to return home. Use the sidebar icons in the project header/titlebar or ⌃⌘B to expand the main area. See [workspace home](workspace-home.md).

@@ -93,3 +93,5 @@ python3 tests/measure_search.py local-search  # matched replacement vs pinned ba
 Results and screenshots stay in `.build/test-results/`. All tests use owned temporary files; native file chooser acceptance, real IME, and complete multi-screen/fullscreen behavior still need manual verification. A Windows build must also be run on Windows; cross-compilation alone does not verify its GUI.
 
 Preferences → Remember Previous Workspace defaults on and restores folders as well as file tabs. Turning it off starts blank while retaining backups for manual recovery and independent recent folder history. See [workspace restoration](docs/workspace-restoration.md).
+
+New windows and folder-only projects show a native home with quick actions and recent entries. Close the last file tab to return home. Use the sidebar icons in the project header/titlebar or ⌃⌘B to expand the main area. See [workspace home](docs/workspace-home.md).

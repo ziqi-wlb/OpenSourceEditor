@@ -11,6 +11,7 @@ flowchart TB
     entry[main.swift: arguments and startup] --> app[EditorAppDelegate: application lifetime]
     app --> workspace[EditorWorkspace: windows and commands]
     app --> information[ProjectInformation: introduction and release notes]
+    workspace --> home[WorkspaceHomeView: native quick actions]
     workspace --> doc[EditorDocument: text and disk identity]
     workspace --> panes[EditorPane: TextKit views]
     panes --> storage[NSTextStorage: shared text]
@@ -79,3 +80,5 @@ The workspace owns normal chrome visibility and a temporary Focus Mode snapshot.
 `--tests` builds a separate application from the same sources with `EDITOR_TESTS`; its bundle declares no document associations. Release checks exclude test symbols, personal paths and caches. Native regressions exercise sheets, menus, views and process exit. A build does not establish another platform's GUI acceptance. See [build/install](../README.md), [features](features.md), [development](development.md) and [performance](performance-optimization.md).
 
 Preferences → Remember Previous Workspace defaults on and restores folders as well as file tabs. Turning it off starts blank while retaining backups for manual recovery and independent recent folder history. See [workspace restoration](workspace-restoration.md).
+
+New windows and folder-only projects show a native home with quick actions and recent entries. Close the last file tab to return home. Use the sidebar icons in the project header/titlebar or ⌃⌘B to expand the main area. See [workspace home](workspace-home.md).

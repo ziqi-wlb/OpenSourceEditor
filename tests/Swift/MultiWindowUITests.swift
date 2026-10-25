@@ -64,7 +64,8 @@ enum MultiWindowUITests {
         }
         check("multiple workspace windows share one running app and Dock identity", ownRunningApps().count == 1 && ownRunningApps().first?.processIdentifier == ProcessInfo.processInfo.processIdentifier)
         check("new windows fold into native window tabs", first.window.tabbedWindows?.count == 2 && first.window.tabbedWindows?.contains(second.window) == true)
-        check("new workspace has independent documents", second.documents.count == 1 && second.currentDocument !== originalDocument && second.currentDocument?.storage.string == "")
+        check("new workspace starts on home without an implicit document", second.documents.isEmpty && second.snapshot["homeVisible"] as? Bool == true)
+        _ = second.executeCommand("new_file")
         check("new workspace inherits current theme and font", second.snapshot["theme"] as? String == first.snapshot["theme"] as? String && second.currentTextView?.font?.pointSize == first.currentTextView?.font?.pointSize)
         check("active window owns menu actions", app.activeWorkspace === second && NSApp.mainMenu?.items.first(where: { $0.title == "File" })?.submenu?.items.first(where: { $0.title == "Save" })?.target as? EditorWorkspace === second)
         check("native window-tab plus action is handled by the responder chain", NSApp.sendAction(#selector(EditorAppDelegate.newWindowForTab(_:)), to: nil, from: nil) && app.workspaces.count == 3)
@@ -175,7 +176,7 @@ enum MultiWindowUITests {
                   app.projectInformationWindow?.section == .about && app.workspaces.isEmpty)
             app.projectInformationWindow?.window?.performClose(nil)
             check("New Window menu works without an open workspace", menuAction("File", "New Window")); await pump()
-            check("empty application creates a new usable workspace", app.workspaces.count == 1 && app.activeWorkspace?.currentTextView?.isEditable == true)
+            check("empty application creates a usable home workspace", app.workspaces.count == 1 && app.activeWorkspace?.snapshot["homeVisible"] as? Bool == true)
             app.activeWorkspace?.window.performClose(nil); await pump()
             _ = app.applicationShouldHandleReopen(NSApp, hasVisibleWindows: false); await pump()
             check("Dock reopen creates a workspace after last close", app.workspaces.count == 1 && app.activeWorkspace?.window.isVisible == true)

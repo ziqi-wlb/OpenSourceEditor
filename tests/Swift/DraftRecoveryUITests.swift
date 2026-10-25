@@ -142,6 +142,7 @@ enum DraftRecoveryUITests {
         first.currentDocument!.setTextUndoably("# Last edit 中文😀", actionName: "Fixture")
         first.currentTextView!.setSelectedRange(NSRange(location: 2, length: 4))
         let second = app.newWindow()
+        _ = second.executeCommand("new_file")
         second.setAutoRecovery(true)
         second.currentDocument!.setTextUndoably("Untitled unfinished note 中文😀", actionName: "Fixture")
         // Real NSApplication.terminate must wait for both final disk writes.

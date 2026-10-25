@@ -48,6 +48,9 @@ enum ProductUITests {
         do {
             try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
             let presentationWorkspace = app.newWindow(tabbed: false)
+            // Native frame autosave is shared by UI suites. Establish the viewport
+            // required by these fullscreen, preview and mouse-navigation checks.
+            presentationWorkspace.window.setContentSize(NSSize(width: 1220, height: 810))
             await pump()
             let appMenu = NSApp.mainMenu?.items.first { $0.title == "Source Editor" }?.submenu
             func invokeInformation(_ title: String) -> Bool {
@@ -173,6 +176,7 @@ enum ProductUITests {
             try source.write(to: md, atomically: true, encoding: .utf8)
             try "first\nsearch target 中文 😀\nlast\n".write(to: plain, atomically: true, encoding: .utf8)
             let workspace = app.newWindow(openURLs: [md, plain], projectURL: directory, tabbed: false)
+            workspace.window.setContentSize(NSSize(width: 1220, height: 810))
             workspace.selectDocument(0)
             await pump()
             let document = workspace.currentDocument!

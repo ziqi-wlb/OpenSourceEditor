@@ -4,6 +4,12 @@
 
 Author: ziqi-wlb · [550461053@qq.com](mailto:550461053@qq.com)
 
+## 0.9.5
+
+- Show a native workspace home for new windows and folder-only projects, with quick file/note/search actions and recent entries.
+- Return home after closing the last file tab; create an untitled buffer only through an explicit New File action.
+- Add sidebar buttons in the project header and titlebar; adapt the home to dark/light themes and narrow windows.
+
 ## 0.9.4
 
 - Restore the last closed workspace, including folder-only projects and sidebar expansion, selection and scroll position.

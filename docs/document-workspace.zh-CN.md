@@ -67,3 +67,5 @@ bash tests/run_all.sh markdown-render-verification --ui --arch universal
 [产品验收](product-readiness.zh-CN.md)、[WebKit 资源](document-workspace-performance.zh-CN.md)、[文本性能](performance-optimization.zh-CN.md) 说明边界，不能替代 IME、VoiceOver、长期使用和 Intel/Windows 原生验收。
 
 Preferences → Remember Previous Workspace 默认开启，同时恢复文件夹与文件标签。关闭后重开进入空白窗口，保留可手动恢复的草稿与独立的最近文件夹历史。参见[工作区恢复](workspace-restoration.zh-CN.md)。
+
+新窗口和纯文件夹项目显示带快捷操作与最近记录的原生主页，关闭最后一个文件标签后回到主页。通过项目标题/窗口标题栏的侧栏图标或 ⌃⌘B 扩大主区域。参见[工作区主页](workspace-home.zh-CN.md)。

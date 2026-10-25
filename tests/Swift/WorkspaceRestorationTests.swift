@@ -79,7 +79,7 @@ enum WorkspaceRestorationTests {
             check("Off clears ordinary restore state", off.workspaces.isEmpty && off.lastClosedWorkspace == nil)
             restored.window.performClose(nil)
             _ = app.applicationShouldHandleReopen(NSApp, hasVisibleWindows: false)
-            check("Off reopens blank while retaining folder history", app.activeWorkspace?.projectFolderURL == nil && app.recentFolderURLs == [project])
+            check("Off reopens home while retaining folder history", app.activeWorkspace?.projectFolderURL == nil && app.activeWorkspace?.documents.isEmpty == true && app.recentFolderURLs == [project])
             check("Reopen Last Folder works with switch off", click("Reopen Last Folder") && app.activeWorkspace?.projectFolderURL == project)
             let recent = menuItem("Open Recent Folders")!.submenu!
             app.menuNeedsUpdate(recent)
@@ -162,7 +162,7 @@ enum WorkspaceRestorationTests {
             check("One workspace restored", app.workspaces.count == 1)
             check("Switch survives separate process", app.rememberWorkspace == (mode != "off"))
             if mode == "off" {
-                check("Off starts blank", workspace.projectFolderURL == nil && workspace.currentDocument?.storage.string.isEmpty == true)
+                check("Off starts blank on home", workspace.projectFolderURL == nil && workspace.documents.isEmpty && workspace.snapshot["homeVisible"] as? Bool == true)
                 check("Off preserves manually recoverable draft", RecoveryCandidate.discover(in: app.recoveryDirectory).count == 1)
                 check("Off shows draft review action", (workspace.snapshot["notice"] as? String)?.contains("draft backup") == true)
                 if let candidate = RecoveryCandidate.discover(in: app.recoveryDirectory).first {

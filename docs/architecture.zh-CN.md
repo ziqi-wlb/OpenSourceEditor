@@ -11,6 +11,7 @@ flowchart TB
     entry[main.swift：参数与启动] --> app[EditorAppDelegate：应用生命周期]
     app --> workspace[EditorWorkspace：窗口与命令]
     app --> information[ProjectInformation：介绍与版本说明]
+    workspace --> home[WorkspaceHomeView：原生快捷操作]
     workspace --> doc[EditorDocument：文本与磁盘身份]
     workspace --> panes[EditorPane：TextKit 编辑视图]
     panes --> storage[NSTextStorage：共享文本]
@@ -79,3 +80,5 @@ Markdown 显式预览立即启动，后续输入使用防抖。Foundation 拥有
 `--tests` 构建独立测试应用，编译相同生产源码并增加 `EDITOR_TESTS` 测试入口；测试包不注册文档关联。发布包检查测试符号、个人路径、缓存和资源白名单。原生 UI 回归验证实际 sheet、菜单、编辑视图及进程退出；成功构建不代表另一平台的 GUI 已验收。详情见 [构建安装](../README.zh-CN.md)、[功能矩阵](features.zh-CN.md)、[开发指南](development.zh-CN.md)、[性能报告](performance-optimization.zh-CN.md)。
 
 Preferences → Remember Previous Workspace 默认开启，同时恢复文件夹与文件标签。关闭后重开进入空白窗口，保留可手动恢复的草稿与独立的最近文件夹历史。参见[工作区恢复](workspace-restoration.zh-CN.md)。
+
+新窗口和纯文件夹项目显示带快捷操作与最近记录的原生主页，关闭最后一个文件标签后回到主页。通过项目标题/窗口标题栏的侧栏图标或 ⌃⌘B 扩大主区域。参见[工作区主页](workspace-home.zh-CN.md)。

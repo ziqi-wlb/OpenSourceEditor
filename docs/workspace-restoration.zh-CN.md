@@ -26,3 +26,5 @@ UI 验收覆盖真实菜单操作、纯文件夹关闭/Dock 重开、Unicode 目
 参见[开发指南](development.zh-CN.md)、[架构](architecture.zh-CN.md)、[布局](layout.zh-CN.md)和[版本说明](../RELEASE_NOTES.zh-CN.md)。
 
 最终 `workspace-094-final` 验收为 708 项通过、13 项合同向量明确跳过，其中包含 20 项原生工作区和 32 项独立进程检查。通过验收的 Universal 发行程序和源码摘要匹配 macOS 0.9.4；工作区恢复图片由原生内容视图捕获。
+
+新窗口和纯文件夹项目显示带快捷操作与最近记录的原生主页，关闭最后一个文件标签后回到主页。通过项目标题/窗口标题栏的侧栏图标或 ⌃⌘B 扩大主区域。参见[工作区主页](workspace-home.zh-CN.md)。

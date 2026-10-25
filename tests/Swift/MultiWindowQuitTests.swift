@@ -18,6 +18,8 @@ final class MultiWindowQuitTests {
         self.app = app
         first = app.newWindow(tabbed: false)
         second = app.newWindow(tabbed: false)
+        _ = first.executeCommand("new_file")
+        _ = second.executeCommand("new_file")
         first.runBuild(spec: BuildSpec(argv: ["/bin/sleep", "30"], timeoutSeconds: 35))
         second.runBuild(spec: BuildSpec(argv: ["/usr/bin/python3", "-u", "-c",
             "import pathlib,signal,sys,time; signal.signal(signal.SIGTERM,signal.SIG_IGN); pathlib.Path(sys.argv[1]).write_text('READY'); time.sleep(30)", readyFile.path], timeoutSeconds: 35))

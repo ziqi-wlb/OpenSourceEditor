@@ -56,3 +56,5 @@
 中文/日文真实输入法、VoiceOver、长时间连续编辑、多屏/全屏/睡眠唤醒、Intel 实机和 Windows 原生 GUI 仍需专项验收。自动测试通过与功能存在不能作为“所有功能完整”或工业级认证。后续任务和验收标准见 [产品就绪清单](product-readiness.zh-CN.md)。
 
 Preferences → Remember Previous Workspace 默认开启，同时恢复文件夹与文件标签。关闭后重开进入空白窗口，保留可手动恢复的草稿与独立的最近文件夹历史。参见[工作区恢复](workspace-restoration.zh-CN.md)。
+
+新窗口和纯文件夹项目显示带快捷操作与最近记录的原生主页，关闭最后一个文件标签后回到主页。通过项目标题/窗口标题栏的侧栏图标或 ⌃⌘B 扩大主区域。参见[工作区主页](workspace-home.zh-CN.md)。

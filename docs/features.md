@@ -56,3 +56,5 @@ Full TextMate/Sublime grammars, snippets, LSP completion/diagnostics, rectangula
 Real Chinese/Japanese IME, VoiceOver, prolonged editing, multiscreen/fullscreen/sleep, physical Intel and native Windows GUI need dedicated acceptance. Test success and feature presence do not certify industrial readiness or complete feature parity. See [readiness](product-readiness.md).
 
 Preferences → Remember Previous Workspace defaults on and restores folders as well as file tabs. Turning it off starts blank while retaining backups for manual recovery and independent recent folder history. See [workspace restoration](workspace-restoration.md).
+
+New windows and folder-only projects show a native home with quick actions and recent entries. Close the last file tab to return home. Use the sidebar icons in the project header/titlebar or ⌃⌘B to expand the main area. See [workspace home](workspace-home.md).

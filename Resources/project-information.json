@@ -7,6 +7,23 @@
   },
   "releases": [
     {
+      "version": "0.9.5",
+      "changes": [
+        {
+          "english": "Show a native workspace home for new windows and folder-only projects, with quick file/note/search actions and recent entries.",
+          "chinese": "新窗口和纯文件夹项目显示原生主页，提供文件、笔记、搜索快捷操作和最近记录。"
+        },
+        {
+          "english": "Return home after closing the last file tab; create an untitled buffer only through an explicit New File action.",
+          "chinese": "关闭最后一个文件标签后返回主页，明确新建文件时才创建未命名缓冲区。"
+        },
+        {
+          "english": "Add sidebar buttons in the project header and titlebar; adapt the home to dark/light themes and narrow windows.",
+          "chinese": "项目标题和窗口标题栏增加侧栏切换按钮，主页适配深浅主题与窄窗口。"
+        }
+      ]
+    },
+    {
       "version": "0.9.4",
       "changes": [
         {

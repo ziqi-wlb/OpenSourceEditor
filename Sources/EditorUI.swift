@@ -817,6 +817,9 @@ final class EditorWorkspace: NSObject, NSWindowDelegate,
     private let workSplit = EditorSplitView()
     private let editorSplit = EditorSplitView()
     private let contentSplit = EditorSplitView()
+    private let workspaceHome = WorkspaceHomeView(frame: .zero)
+    private let sidebarToggleButton = NSButton(title: "Toggle Sidebar", target: nil, action: nil)
+    private let sidebarHeaderButton = NSButton(title: "Hide Sidebar", target: nil, action: nil)
     private let markdownBar = NSStackView()
     private let markdownModes = NSSegmentedControl(labels: ["Edit", "Preview", "Side by Side"], trackingMode: .selectOne, target: nil, action: nil)
     private let markdownInfo = NSTextField(labelWithString: "Markdown")
@@ -1094,11 +1097,11 @@ final class EditorWorkspace: NSObject, NSWindowDelegate,
         NotificationCenter.default.addObserver(self, selector: #selector(documentChanged(_:)),
                                                name: .editorDocumentChanged, object: nil)
         for url in openURLs { openDocument(url) }
-        if documents.isEmpty { addDocument(EditorDocument(settings: documentDefaults)) }
         if let projectURL { setProject(projectURL) }
+        if documents.isEmpty { rebuildPanes(); rebuildTabs(); updateStatus() }
         window.makeKeyAndOrderFront(nil)
         NSApp.activate(ignoringOtherApps: true)
-        window.makeFirstResponder(currentTextView)
+        focusContent()
         #if !EDITOR_TESTS
         if UserDefaults.standard.object(forKey: "autoRecovery") as? Bool != false { setAutoRecovery(true) }
         startFileMonitoring()
@@ -1541,6 +1544,15 @@ final class EditorWorkspace: NSObject, NSWindowDelegate,
         window.tabbingMode = .automatic
         window.backgroundColor = EditorTheme.background
         window.titlebarAppearsTransparent = true
+        EditorTheme.styleIconButton(sidebarToggleButton, symbol: "sidebar.left", label: "Hide Sidebar · ⌃⌘B")
+        sidebarToggleButton.identifier = NSUserInterfaceItemIdentifier("workspace.toggleSidebar")
+        sidebarToggleButton.target = self; sidebarToggleButton.action = #selector(toggleSidebar)
+        let accessory = NSTitlebarAccessoryViewController()
+        accessory.layoutAttribute = .right
+        accessory.view = NSView(frame: NSRect(x: 0, y: 0, width: 40, height: 28))
+        sidebarToggleButton.frame = NSRect(x: 8, y: 2, width: 24, height: 24)
+        accessory.view.addSubview(sidebarToggleButton)
+        window.addTitlebarAccessoryViewController(accessory)
         window.center()
         window.setFrameAutosaveName("SourceEditor.Main")
         let content = NSView()
@@ -1556,6 +1568,10 @@ final class EditorWorkspace: NSObject, NSWindowDelegate,
         projectLabel.textColor = EditorTheme.muted
         projectLabel.lineBreakMode = .byTruncatingMiddle
         sidebar.addSubview(projectLabel)
+        EditorTheme.styleIconButton(sidebarHeaderButton, symbol: "sidebar.left", label: "Hide Sidebar · ⌃⌘B")
+        sidebarHeaderButton.identifier = NSUserInterfaceItemIdentifier("sidebar.hide")
+        sidebarHeaderButton.target = self; sidebarHeaderButton.action = #selector(toggleSidebar)
+        sidebar.addSubview(sidebarHeaderButton)
         let projectColumn = NSTableColumn(identifier: NSUserInterfaceItemIdentifier("files"))
         projectColumn.width = 240
         projectColumn.resizingMask = []
@@ -1582,7 +1598,8 @@ final class EditorWorkspace: NSObject, NSWindowDelegate,
         sidebar.addSubview(projectScroll)
         sidebar.arrange = { [weak self, weak projectScroll] size in
             guard let self, let projectScroll else { return }
-            self.projectLabel.frame = NSRect(x: 16, y: 15, width: max(1, size.width - 26), height: 15)
+            self.projectLabel.frame = NSRect(x: 16, y: 15, width: max(1, size.width - 56), height: 15)
+            self.sidebarHeaderButton.frame = NSRect(x: max(0, size.width - 34), y: 10, width: 24, height: 24)
             let frame = NSRect(x: 0, y: 42, width: size.width, height: max(1, size.height - 42))
             if projectScroll.frame != frame { projectScroll.frame = frame; projectScroll.needsLayout = true }
         }
@@ -1603,6 +1620,22 @@ final class EditorWorkspace: NSObject, NSWindowDelegate,
         contentSplit.dividerStyle = .thin
         contentSplit.useFraction(0.5)
         contentSplit.addArrangedSubview(editorSplit)
+        workspaceHome.isHidden = true
+        workspaceHome.onAction = { [weak self] action in
+            guard let self, !self.pendingTermination, !self.pendingWindowClose else { return }
+            switch action {
+            case .newFile: self.newFile()
+            case .openFile: self.openFile()
+            case .openFolder: self.openFolder()
+            case .newNote: self.newNote(.blank)
+            case .quickOpen: self.quickOpen()
+            case .findInProject: self.findInProject()
+            case .recentFile(let url): self.openDocument(url)
+            case .recentFolder(let url): self.applicationOwner?.openRecentFolder(url)
+            }
+        }
+        workspaceHome.onExitFocus = { [weak self] in self?.exitFocusFromEscape() ?? false }
+        contentSplit.addArrangedSubview(workspaceHome)
         workSplit.isVertical = false
         workSplit.dividerStyle = .thin
         workSplit.useFraction(0.72)
@@ -1630,7 +1663,7 @@ final class EditorWorkspace: NSObject, NSWindowDelegate,
         }
         editorArea.arrange = { [weak self, weak tabScroll] size in
             guard let self, let tabScroll else { return }
-            let tabHeight: CGFloat = tabScroll.isHidden ? 0 : 40
+            let tabHeight: CGFloat = tabScroll.isHidden || self.documents.isEmpty ? 0 : 40
             tabScroll.frame = NSRect(x: 0, y: 0, width: size.width, height: tabHeight)
             let noticeHeight: CGFloat = self.noticeBar.isHidden ? 0 : 28
             self.noticeBar.frame = NSRect(x: 10, y: tabHeight, width: max(1, size.width - 20), height: noticeHeight)
@@ -2025,6 +2058,7 @@ final class EditorWorkspace: NSObject, NSWindowDelegate,
         outputArea.layer?.backgroundColor = EditorTheme.panel.cgColor
         markdownInfo.textColor = EditorTheme.muted
         palette.updateTheme()
+        refreshHome()
     }
 
     @objc private func saveConfiguration() {
@@ -2121,6 +2155,8 @@ final class EditorWorkspace: NSObject, NSWindowDelegate,
             return markdownViewMode != .preview && currentDocument?.resolvedSyntax == .markdown && currentTextView?.hasMarkedText() == false
         case #selector(insertTimestamp): return markdownViewMode != .preview && currentTextView?.hasMarkedText() == false
         case #selector(saveAll): return documents.contains(where: \.isModified)
+        case #selector(saveFile), #selector(saveAs), #selector(showFind), #selector(showReplace), #selector(toggleSplit): return currentDocument != nil
+        case #selector(saveSession): return !documents.isEmpty
         case #selector(toggleComment): return markdownViewMode != .preview && currentDocument.map { !["txt", "json"].contains($0.syntaxIdentifier) } == true
         case #selector(duplicateLines), #selector(deleteLines), #selector(moveLinesUp), #selector(moveLinesDown): return markdownViewMode != .preview && currentDocument != nil
         case #selector(revertFile): return currentDocument?.fileURL != nil
@@ -2175,14 +2211,14 @@ final class EditorWorkspace: NSObject, NSWindowDelegate,
         rebuildPanes()
         rebuildTabs()
         updateStatus()
-        window.makeFirstResponder(currentTextView)
+        focusContent()
         followCurrentFileInSidebar()
     }
 
     private func rebuildPanes() {
         for view in editorSplit.arrangedSubviews { editorSplit.removeArrangedSubview(view); view.removeFromSuperview() }
         panes.removeAll()
-        guard let document = currentDocument else { return }
+        guard let document = currentDocument else { refreshMarkdown(); refreshHome(); return }
         for index in 0..<(splitEnabled ? 2 : 1) {
             let pane = EditorPane(document: document, delegate: self) { [weak self] in
                 self?.activePane = index
@@ -2204,9 +2240,7 @@ final class EditorWorkspace: NSObject, NSWindowDelegate,
             }
             pane.textView.onPasteImage = { [weak self] data in self?.insertNoteImage(data) }
             pane.textView.onExitFocus = { [weak self] in
-                guard let self, self.focusLayout != nil, !self.fullScreenTransition else { return false }
-                self.toggleFocusMode()
-                return true
+                self?.exitFocusFromEscape() ?? false
             }
             pane.scroll.rulersVisible = lineNumbersVisible
             panes.append(pane)
@@ -2249,6 +2283,7 @@ final class EditorWorkspace: NSObject, NSWindowDelegate,
         }
         tabs.layoutSubtreeIfNeeded()
         tabs.setFrameSize(NSSize(width: max(100, tabs.fittingSize.width), height: 40))
+        editorArea.needsLayout = true
     }
 
     func textDidChange(_ notification: Notification) {
@@ -2286,7 +2321,19 @@ final class EditorWorkspace: NSObject, NSWindowDelegate,
     }
 
     private func updateStatus() {
-        guard let document = currentDocument, let textView = currentTextView else { return }
+        let editing = currentDocument != nil
+        for button in [status.encoding, status.lineEnding, status.indentation, status.syntax] { button.isHidden = !editing }
+        status.needsLayout = true
+        updateSidebarToggle()
+        guard let document = currentDocument, let textView = currentTextView else {
+            statusMenuSignature = ""
+            for menu in [saveEncodingMenu, reopenEncodingMenu, mainIndentationMenu, mainLineEndingMenu, mainSyntaxMenu] { menu?.removeAllItems() }
+            status.location.stringValue = projectRoot == nil ? "Ready" : "Workspace ready"
+            window.title = (projectRoot?.url.lastPathComponent ?? "Welcome") + " — Source Editor"
+            window.isDocumentEdited = false; window.representedURL = projectRoot?.url
+            refreshMarkdown(); refreshHome()
+            return
+        }
         let source = document.storage.string as NSString
         let selection = textView.selectedRange()
         let offset = min(selection.location, source.length)
@@ -2311,7 +2358,7 @@ final class EditorWorkspace: NSObject, NSWindowDelegate,
         lastMenuActionID = String(describing: ObjectIdentifier(action))
         menuActionCount += 1
         #endif
-        window.makeFirstResponder(currentTextView)
+        focusContent()
     }
 
     private func actionItem(_ title: String, checked: Bool = false, enabled: Bool = true,
@@ -2547,6 +2594,7 @@ final class EditorWorkspace: NSObject, NSWindowDelegate,
         refreshFileMonitor()
         followCurrentFileInSidebar()
         if changed { applicationOwner?.noteRecentFolder(url) }
+        if currentDocument == nil { updateStatus() }
     }
 
     private func projectRelativePath(_ url: URL) -> String? {
@@ -2813,7 +2861,7 @@ final class EditorWorkspace: NSObject, NSWindowDelegate,
         if let recovery, !recovery.isFinishing, recoveryTimer == nil {
             recoveryTimer = Timer.scheduledTimer(withTimeInterval: 5, repeats: true) { [weak self] _ in self?.updateRecoverySnapshot() }
         }
-        window.makeFirstResponder(currentTextView)
+        focusContent()
         updateStatus()
     }
 
@@ -2960,12 +3008,13 @@ final class EditorWorkspace: NSObject, NSWindowDelegate,
         rebuildTabs()
         outline.reloadData()
         updateStatus()
-        window.makeFirstResponder(currentTextView)
+        focusContent()
         refreshFileMonitor()
         return true
     }
 
     @objc private func saveSession() {
+        guard !documents.isEmpty else { return }
         let panel = NSSavePanel()
         panel.title = "Save Session"
         panel.nameFieldStringValue = "workspace.source-session.json"
@@ -3074,6 +3123,7 @@ final class EditorWorkspace: NSObject, NSWindowDelegate,
     private func noteRecentFile(_ url: URL) {
         recentFiles.note(url)
         refreshRecentFilesMenu()
+        applicationOwner?.refreshHomes()
     }
 
     private func refreshRecentFilesMenu() {
@@ -3095,6 +3145,7 @@ final class EditorWorkspace: NSObject, NSWindowDelegate,
         menu.addItem(actionItem("Clear Recent Files", enabled: !recentFiles.urls.isEmpty) { [weak self] in
             self?.recentFiles.clear()
             self?.refreshRecentFilesMenu()
+            self?.applicationOwner?.refreshHomes()
         })
     }
 
@@ -3144,7 +3195,7 @@ final class EditorWorkspace: NSObject, NSWindowDelegate,
         diskChecks.removeValue(forKey: closedIdentity)?.cancel()
         diskChanges.removeValue(forKey: closedIdentity)
         refreshFileMonitor()
-        if documents.isEmpty { addDocument(EditorDocument(settings: documentDefaults)) }
+        if documents.isEmpty { selectedIndex = 0; rebuildPanes(); rebuildTabs(); updateStatus() }
         else { selectDocument(min(documents.count - 1, index < oldSelected ? oldSelected - 1 : oldSelected)) }
         if projectRoot == nil { outline.reloadData() }
         updateRecoverySnapshot()
@@ -3463,7 +3514,10 @@ final class EditorWorkspace: NSObject, NSWindowDelegate,
         if markdownBar.isHidden != hidden { markdownBar.isHidden = hidden; editorArea.needsLayout = true }
         let mode = markdownViewMode
         markdownModes.selectedSegment = mode.rawValue
-        if editorSplit.isHidden != (mode == .preview) { editorSplit.isHidden = mode == .preview; contentSplit.needsLayout = true }
+        let showHome = currentDocument == nil
+        if workspaceHome.isHidden == showHome { workspaceHome.isHidden = !showHome; contentSplit.needsLayout = true }
+        let hideEditor = showHome || mode == .preview
+        if editorSplit.isHidden != hideEditor { editorSplit.isHidden = hideEditor; contentSplit.needsLayout = true }
         guard supported, mode != .edit, let document = currentDocument else {
             releaseMarkdownPreview()
             refreshMarkdownInfo()
@@ -3535,7 +3589,7 @@ final class EditorWorkspace: NSObject, NSWindowDelegate,
         activePane = 0
         rebuildPanes()
         updateStatus()
-        window.makeFirstResponder(currentTextView)
+        focusContent()
     }
 
     @objc private func toggleSidebar() {
@@ -3546,6 +3600,30 @@ final class EditorWorkspace: NSObject, NSWindowDelegate,
             projectSplit.setPosition(240, ofDividerAt: 0)
             followCurrentFileInSidebar()
         }
+        updateSidebarToggle()
+    }
+
+    private func updateSidebarToggle() {
+        let visible = projectSplit.arrangedSubviews.first?.isHidden == false
+        sidebarToggleButton.toolTip = (visible ? "Hide Sidebar" : "Show Sidebar") + " · ⌃⌘B"
+        sidebarToggleButton.setAccessibilityLabel(visible ? "Hide Sidebar" : "Show Sidebar")
+        sidebarToggleButton.state = visible ? .on : .off
+    }
+
+    func refreshHome() {
+        guard currentDocument == nil else { return }
+        workspaceHome.update(project: projectRoot?.url, recentFiles: recentFiles.urls, recentFolders: applicationOwner?.recentFolderURLs ?? [])
+    }
+
+    func focusContent() {
+        if let view = currentTextView { window.makeFirstResponder(view) }
+        else { window.makeFirstResponder(workspaceHome) }
+    }
+
+    private func exitFocusFromEscape() -> Bool {
+        guard focusLayout != nil, !fullScreenTransition else { return false }
+        toggleFocusMode()
+        return true
     }
 
     @objc private func toggleTabBar() { tabScroll.isHidden.toggle(); editorArea.needsLayout = true }
@@ -3578,7 +3656,8 @@ final class EditorWorkspace: NSObject, NSWindowDelegate,
         lineNumbersVisible = false
         for pane in panes { pane.scroll.rulersVisible = false }
         projectSplit.adjustSubviews(); workSplit.adjustSubviews(); editorArea.needsLayout = true
-        window.makeFirstResponder(currentTextView)
+        updateSidebarToggle()
+        focusContent()
         focusEnteredFullScreen = !window.styleMask.contains(.fullScreen)
         if focusEnteredFullScreen { toggleFullScreen() }
     }
@@ -3593,7 +3672,8 @@ final class EditorWorkspace: NSObject, NSWindowDelegate,
         for pane in panes { pane.scroll.rulersVisible = lineNumbersVisible }
         projectSplit.adjustSubviews(); workSplit.adjustSubviews(); editorArea.needsLayout = true
         refreshMarkdown(); followCurrentFileInSidebar()
-        window.makeFirstResponder(currentTextView)
+        updateSidebarToggle()
+        focusContent()
     }
 
     private func replaceText(_ result: TextEditResult, name: String) {
@@ -3784,7 +3864,7 @@ final class EditorWorkspace: NSObject, NSWindowDelegate,
     }
     @objc private func showFind() { enableFind(replace: false) }
     @objc private func showReplace() { enableFind(replace: true) }
-    @objc private func hideFind() { findBar.isHidden = true; editorArea.needsLayout = true; window.makeFirstResponder(currentTextView) }
+    @objc private func hideFind() { findBar.isHidden = true; editorArea.needsLayout = true; focusContent() }
 
     private var findKey: FindKey? {
         guard let document = currentDocument else { return nil }
@@ -4053,6 +4133,7 @@ final class EditorWorkspace: NSObject, NSWindowDelegate,
          "lineNumbersVisible": lineNumbersVisible, "focusMode": focusLayout != nil,
          "fullScreen": window.styleMask.contains(.fullScreen), "fullScreenTransition": fullScreenTransition,
          "editorViewportHeight": workSplit.bounds.height, "editorAreaHeight": editorArea.bounds.height,
+         "homeVisible": !workspaceHome.isHidden, "editorAreaWidth": editorArea.bounds.width,
          "encoding": status.encoding.title, "lineEnding": status.lineEnding.title,
          "indentation": status.indentation.title, "syntax": status.syntax.title,
          "menuActionCount": menuActionCount,
