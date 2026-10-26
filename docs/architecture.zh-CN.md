@@ -89,3 +89,5 @@ Preferences → Remember Previous Workspace 默认开启，同时恢复文件夹
 新窗口和纯文件夹项目显示带快捷操作与最近记录的原生主页，关闭最后一个文件标签后回到主页。通过项目标题/窗口标题栏的侧栏图标或 ⌃⌘B 扩大主区域。参见[工作区主页](workspace-home.zh-CN.md)。
 
 macOS 0.9.6 支持左右/上下编辑区切分，各区域独立选择文件并保留光标、滚动位置。通过标题栏图标或 ⌥⌘2 切分、⌥⌘3 切换区域、⌥⌘1 保留活动区域并合并；工作区/会话恢复保留区域状态。参见[编辑区切分](editor-splits.zh-CN.md)。
+
+图片类型和元信息由 `EditorDocument`/`EditorImageAsset` 负责；`EditorPane` 选择原生 `ImagePreviewView` 或 TextKit 展示，图片内容不进入文本解码、保存与草稿序列化。共享队列最多两个任务，解码最长边 2048 的预览，仅由可见区域保留。可选图片引用标记保持旧工作区/会话的读取兼容。见[图片预览](image-preview.zh-CN.md)。

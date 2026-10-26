@@ -160,11 +160,11 @@ enum CoreTestRunner {
             let file = directory.appendingPathComponent("session.json")
             try session.save(file)
             let loaded = try EditorSession.load(file)
-            let (same, ranges) = loaded.documents[0].restore()
+            let (same, ranges) = try loaded.documents[0].restore()
             try check(same.fileURL == path && same.isModified && same.storage.string == "unsaved😀", "Dirty session roundtrip")
             try check(ranges == [NSRange(location: 7, length: 2)], "Unicode selection restored")
             try Data("external".utf8).write(to: path)
-            let (recovered, _) = loaded.documents[0].restore()
+            let (recovered, _) = try loaded.documents[0].restore()
             try check(recovered.fileURL == nil && recovered.isModified && recovered.storage.string == "unsaved😀", "Changed original recovers untitled")
             try check(try Data(contentsOf: path) == Data("external".utf8), "Recovery does not change disk")
         }

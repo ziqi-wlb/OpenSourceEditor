@@ -34,7 +34,7 @@ if let flag = arguments.firstIndex(of: "--contract-test"), flag + 1 < arguments.
 if arguments.contains("--benchmark") { exit(BenchmarkRunner.run()) }
 let application = NSApplication.shared
 application.setActivationPolicy(.regular)
-if let flag = arguments.first(where: { $0.hasPrefix("--workspace-restart-write=") || $0.hasPrefix("--workspace-restart-read=") || $0.hasPrefix("--workspace-ui-test=") || $0.hasPrefix("--home-ui-test=") || $0.hasPrefix("--split-ui-test=") || $0.hasPrefix("--split-restart-write=") || $0.hasPrefix("--split-restart-read=") || $0.hasPrefix("--file-location-ui-test=") }) {
+if let flag = arguments.first(where: { $0.hasPrefix("--workspace-restart-write=") || $0.hasPrefix("--workspace-restart-read=") || $0.hasPrefix("--workspace-ui-test=") || $0.hasPrefix("--home-ui-test=") || $0.hasPrefix("--split-ui-test=") || $0.hasPrefix("--split-restart-write=") || $0.hasPrefix("--split-restart-read=") || $0.hasPrefix("--file-location-ui-test=") || $0.hasPrefix("--image-ui-test=") || $0.hasPrefix("--image-restart-write=") || $0.hasPrefix("--image-restart-read=") }) {
     setbuf(stdout, nil)
     let directory = URL(fileURLWithPath: String(flag.split(separator: "=", maxSplits: 1)[1]), isDirectory: true)
     let mode = arguments.first(where: { $0.hasPrefix("--workspace-mode=") }).map { String($0.dropFirst("--workspace-mode=".count)) } ?? "closed"
@@ -47,6 +47,8 @@ if let flag = arguments.first(where: { $0.hasPrefix("--workspace-restart-write="
             else if flag.hasPrefix("--home-ui-test=") { exit(await WorkspaceHomeUITests.run(directory: directory)) }
             else if flag.hasPrefix("--split-ui-test=") { exit(await EditorSplitUITests.run(directory: directory)) }
             else if flag.hasPrefix("--file-location-ui-test=") { exit(await FileLocationUITests.run(directory: directory)) }
+            else if flag.hasPrefix("--image-ui-test=") { exit(await ImagePreviewTests.run(directory: directory)) }
+            else if flag.hasPrefix("--image-restart-") { exit(await ImagePreviewTests.restart(directory: directory, write: flag.hasPrefix("--image-restart-write="))) }
             else if flag.hasPrefix("--split-restart-") { exit(await EditorSplitUITests.restart(directory: directory, write: flag.hasPrefix("--split-restart-write="))) }
             else { exit(await WorkspaceRestorationTests.run(directory: directory)) }
         }

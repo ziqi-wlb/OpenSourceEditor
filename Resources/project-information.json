@@ -7,6 +7,19 @@
   },
   "releases": [
     {
+      "version": "0.9.9",
+      "changes": [
+        {
+          "english": "Open raster images in native read-only tabs and mixed image/text splits; add fit, source-size, zoom, metadata and file context actions.",
+          "chinese": "图片可直接打开为原生只读标签，与文本混合切分；提供适应窗口、原始尺寸、缩放、元信息及文件右键操作。"
+        },
+        {
+          "english": "Decode bounded previews in the background, release hidden images, restore image file references in workspaces/sessions and register supported images in Finder Open With.",
+          "chinese": "后台解码受限分辨率预览，释放隐藏图片；工作区与会话恢复图片文件引用，注册常见图片的 Finder 打开方式。"
+        }
+      ]
+    },
+    {
       "version": "0.9.8",
       "changes": [
         {

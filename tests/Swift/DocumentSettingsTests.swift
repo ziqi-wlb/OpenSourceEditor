@@ -353,14 +353,14 @@ enum DocumentSettingsTestRunner {
         test("Session retains codec that cannot currently encode pending text") {
             let url = try file("session-unrepresentable.txt", Data([0xe9])), document = try EditorDocument.open(url, encoding: .windows1252)
             document.setTextUndoably("🙂", actionName: "Edit")
-            let restored = EditorSession.Document(document: document, ranges: caret(2)).restore().0
+            let restored = try EditorSession.Document(document: document, ranges: caret(2)).restore().0
             try check(restored.encoding == .windows1252 && restored.storage.string == "🙂" && restored.isModified, "Pending original intent retained")
             try rejects { try restored.save() }; try check(try Data(contentsOf: url) == Data([0xe9]), "Recovery cannot silently corrupt bytes")
         }
         test("Old version-one session document fields recover with defaults") {
             let data = Data("{\"text\":\"old\",\"selections\":[[0,0]]}".utf8)
             let captured = try JSONDecoder().decode(EditorSession.Document.self, from: data)
-            let restored = captured.restore().0
+            let restored = try captured.restore().0
             try check(restored.storage.string == "old" && restored.encoding == .utf8 && restored.settings == DocumentSettings() && restored.isModified, "Old schema recovery")
         }
         test("Changed disk session recovers untitled while retaining settings and codec") {
@@ -369,7 +369,7 @@ enum DocumentSettingsTestRunner {
             document.setTextUndoably("pending", actionName: "Edit")
             let captured = EditorSession.Document(document: document, ranges: caret(1))
             try Data("external".utf8).write(to: url)
-            let restored = captured.restore().0
+            let restored = try captured.restore().0
             try check(restored.fileURL == nil && restored.diskDigestHex == nil && restored.storage.string == "pending" && restored.settings == config && restored.encoding == .utf8BOM && restored.isModified, "Old snapshot cannot adopt external baseline")
             try check(try Data(contentsOf: url) == Data("external".utf8), "External file unchanged")
         }

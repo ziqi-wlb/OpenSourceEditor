@@ -23,6 +23,7 @@ struct SavedWorkspace: Codable {
         var encoding: EditorEncoding
         var selections: [[Int]]
         var markdownMode: String
+        var isImage: Bool? = nil
     }
     var files: [File]
     var selectedPath: String?

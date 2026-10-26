@@ -460,6 +460,9 @@ private final class FrameLayoutView: NSView {
 
 private final class EditorPane: NSObject {
     let document: EditorDocument
+    private(set) var imagePreview: ImagePreviewView?
+    var view: NSView { imagePreview ?? scroll }
+    var focusView: NSView { imagePreview ?? textView }
     let scroll = EditorScrollView()
     let textView: EditorTextView
     let layout: NSLayoutManager
@@ -481,6 +484,13 @@ private final class EditorPane: NSObject {
         textView = EditorTextView(frame: initialFrame, textContainer: container)
         ruler = LineNumberRuler(scrollView: scroll, editor: textView)
         super.init()
+        if let asset = document.imageAsset {
+            let preview = ImagePreviewView(frame: initialFrame)
+            preview.onFocus = focus
+            preview.update(asset)
+            imagePreview = preview
+            textView.isEditable = false; textView.isSelectable = false
+        }
         scroll.hasVerticalScroller = true
         scroll.hasHorizontalScroller = false
         scroll.drawsBackground = true
@@ -526,6 +536,7 @@ private final class EditorPane: NSObject {
     @objc private func scrolled() { scheduleHighlight(delay: 0.03, relayout: false) }
 
     func scheduleHighlight(delay: Double = 0.15, relayout: Bool = true) {
+        guard document.isTextDocument else { return }
         highlightWork?.cancel()
         if relayout { highlightedViewport = nil }
         let work = DispatchWorkItem { [weak self] in self?.highlight() }
@@ -536,6 +547,9 @@ private final class EditorPane: NSObject {
     }
 
     func applyConfiguration(_ configuration: EditorConfiguration) {
+        if let preview = imagePreview, let asset = document.imageAsset {
+            preview.update(asset); preview.updateTheme(); return
+        }
         let font = NSFont(name: configuration.fontName, size: CGFloat(configuration.fontSize)) ??
             NSFont.monospacedSystemFont(ofSize: CGFloat(configuration.fontSize), weight: .regular)
         if document.storage.length == 0 {
@@ -1000,7 +1014,8 @@ final class EditorWorkspace: NSObject, NSWindowDelegate,
             guard let path = document.fileURL?.path else { return nil }
             return .init(path: path, settings: document.settings, encoding: document.diskEncoding,
                 selections: Array((selectionCache[ObjectIdentifier(document)]?.map { [$0.rangeValue.location, $0.rangeValue.length] } ?? [[0, 0]]).prefix(4096)),
-                markdownMode: String(describing: markdownModeCache[ObjectIdentifier(document)] ?? .edit))
+                markdownMode: String(describing: markdownModeCache[ObjectIdentifier(document)] ?? .edit),
+                isImage: document.isTextDocument ? nil : true)
         }
         let rect = focusLayout?.frame ?? window.frame
         let savedSidebar = focusLayout?.sidebarVisible ?? (projectSplit.arrangedSubviews.first?.isHidden == false)
@@ -1069,7 +1084,7 @@ final class EditorWorkspace: NSObject, NSWindowDelegate,
         var failures: [String] = []
         for file in saved.files {
             do {
-                let document = try EditorDocument.open(URL(fileURLWithPath: file.path), encoding: file.encoding, settings: file.settings)
+                let document = try EditorDocument.open(URL(fileURLWithPath: file.path), encoding: file.encoding, settings: file.settings, asImage: file.isImage == true)
                 restored.append(document)
                 let ranges = file.selections.compactMap { pair -> NSValue? in
                     guard pair.count == 2, pair[0] >= 0, pair[1] >= 0, pair[0] <= document.storage.length,
@@ -1139,6 +1154,7 @@ final class EditorWorkspace: NSObject, NSWindowDelegate,
     var projectFolderURL: URL? { projectRoot?.url }
 
     var currentTextView: NSTextView? {
+        guard currentDocument?.isTextDocument == true else { return nil }
         return panes.indices.contains(activePane) ? panes[activePane].textView : panes.first?.textView
     }
 
@@ -1177,6 +1193,12 @@ final class EditorWorkspace: NSObject, NSWindowDelegate,
         guard !closed, !pendingTermination, !pendingWindowClose else { return }
         for document in documents {
             guard let url = document.fileURL, urls.contains(where: { url.path == $0.path || url.path.hasPrefix($0.path + "/") }) else { continue }
+            if let asset = document.imageAsset {
+                do {
+                    if try EditorImageAsset.load(url) != asset { try document.reopen() }
+                } catch { showNotice("Cannot reload \(document.displayName): " + error.localizedDescription) }
+                continue
+            }
             let identity = ObjectIdentifier(document), revision = document.revision
             diskChecks[identity]?.cancel()
             let work = DiskCheckOperation(url: url, digest: document.diskDigestHex, encoding: document.diskEncoding)
@@ -1279,7 +1301,12 @@ final class EditorWorkspace: NSObject, NSWindowDelegate,
         let workspaces = applicationOwner?.workspaces ?? [self]
         let affected = workspaces.flatMap(\.documents).filter { $0.fileURL.flatMap { ProjectFileOperations.rebase($0, from: source, to: source) } != nil }
         let trashed = try ProjectFileOperations(root: root).trash(source)
-        for document in affected { document.detachAfterTrash() }
+        for workspace in workspaces {
+            for document in affected where !document.isTextDocument {
+                if let index = workspace.documents.firstIndex(where: { $0 === document }) { workspace.closeDocument(index) }
+            }
+        }
+        for document in affected where document.isTextDocument { document.detachAfterTrash() }
         for workspace in workspaces { workspace.refreshProject(); workspace.refreshFileMonitor(); workspace.rebuildTabs() }
         return trashed
     }
@@ -1488,6 +1515,14 @@ final class EditorWorkspace: NSObject, NSWindowDelegate,
         item(find, "Find Previous", #selector(findPrevious), "g", [.command, .shift])
         item(find, "Replace…", #selector(showReplace), "f", [.command, .option])
         let view = menu("View")
+        let imageMenu = NSMenu(title: "Image Preview")
+        let imageItem = NSMenuItem(title: "Image Preview", action: nil, keyEquivalent: "")
+        imageItem.submenu = imageMenu; view.addItem(imageItem)
+        item(imageMenu, "Fit Image", #selector(fitImage))
+        item(imageMenu, "Actual Image Size", #selector(actualImageSize))
+        item(imageMenu, "Zoom Image In", #selector(zoomImageIn))
+        item(imageMenu, "Zoom Image Out", #selector(zoomImageOut))
+        item(imageMenu, "Reload Image", #selector(reloadImage))
         item(view, "Command Palette…", #selector(showCommands), "p", [.command, .shift])
         item(view, "Quick Open…", #selector(quickOpen), "p")
         item(view, "Go to Line…", #selector(goToLine), "l")
@@ -1914,6 +1949,7 @@ final class EditorWorkspace: NSObject, NSWindowDelegate,
     }
 
     @objc private func runBuildAction() {
+        guard currentDocument?.isTextDocument != false else { return }
         if currentDocument?.syntaxIdentifier == "md" {
             setMarkdownMode(.preview)
             return
@@ -1991,6 +2027,7 @@ final class EditorWorkspace: NSObject, NSWindowDelegate,
     }
 
     @objc private func runPluginAction() {
+        guard currentDocument?.isTextDocument != false else { return }
         guard !isPluginRunning else { showOutput(title: "PLUGIN · RUNNING"); return }
         if pluginURL == nil { choosePlugin() }
         guard let pluginURL else { return }
@@ -2111,7 +2148,7 @@ final class EditorWorkspace: NSObject, NSWindowDelegate,
 
     func applyLocalConfiguration(_ configuration: EditorConfiguration, updateDocumentSettings: Bool) {
         self.configuration = configuration
-        for document in documents where updateDocumentSettings {
+        for document in documents where updateDocumentSettings && document.isTextDocument {
             var settings = document.settings
             settings.tabSize = configuration.tabSize
             settings.translateTabsToSpaces = configuration.translateTabsToSpaces
@@ -2222,7 +2259,17 @@ final class EditorWorkspace: NSObject, NSWindowDelegate,
 
     func validateMenuItem(_ menuItem: NSMenuItem) -> Bool {
         if pendingTermination || pendingWindowClose { return menuItem.action == #selector(cancelBuild) }
+        if currentDocument?.isTextDocument == false {
+            let textActions: [Selector] = [#selector(saveFile), #selector(saveAs), #selector(showFind), #selector(showReplace),
+                #selector(findNext), #selector(findPrevious), #selector(goToLine), #selector(toggleComment),
+                #selector(duplicateLines), #selector(deleteLines), #selector(moveLinesUp), #selector(moveLinesDown),
+                #selector(indentSelection), #selector(unindentSelection), #selector(insertTimestamp),
+                #selector(sortLines), #selector(sortReverse), #selector(sortUnique), #selector(uppercase), #selector(lowercase),
+                #selector(runPluginAction), #selector(runBuildAction)]
+            if let action = menuItem.action, textActions.contains(action) { return false }
+        }
         switch menuItem.action {
+        case #selector(fitImage), #selector(actualImageSize), #selector(zoomImageIn), #selector(zoomImageOut), #selector(reloadImage): return currentImagePreview != nil
         case #selector(toggleFocusMode):
             menuItem.state = focusLayout == nil ? .off : .on
             return !fullScreenTransition
@@ -2309,6 +2356,7 @@ final class EditorWorkspace: NSObject, NSWindowDelegate,
         for view in editorSplit.arrangedSubviews { editorSplit.removeArrangedSubview(view); view.removeFromSuperview() }
         panes.removeAll()
         guard let document = currentDocument else { companionDocument = nil; splitEnabled = false; activePane = 0; refreshMarkdown(); refreshHome(); return }
+        if !document.isTextDocument { findBar.isHidden = true; editorArea.needsLayout = true }
         if !splitEnabled { activePane = 0; companionDocument = nil }
         let other = companionDocument.flatMap { candidate in documents.contains(where: { $0 === candidate }) ? candidate : nil } ?? document
         if splitEnabled { companionDocument = other }
@@ -2319,6 +2367,12 @@ final class EditorWorkspace: NSObject, NSWindowDelegate,
             pane.textView.onFocus = { [weak self, weak text = pane.textView] in
                 guard let self, let index = self.panes.firstIndex(where: { $0.textView === text }) else { return }
                 self.activatePane(index)
+            }
+            pane.imagePreview?.onFocus = pane.textView.onFocus
+            pane.imagePreview?.onReload = { [weak self] in _ = self?.revertCurrentDocument() }
+            pane.imagePreview?.onExitFocus = { [weak self] in self?.exitFocusFromEscape() ?? false }
+            pane.imagePreview?.makeFileMenu = { [weak self, weak document] in
+                guard let document else { return nil }; return self?.documentContextMenu(document)
             }
             if !reused, let ranges = selectionCache[ObjectIdentifier(document)] {
                 let source = document.storage.string
@@ -2341,7 +2395,7 @@ final class EditorWorkspace: NSObject, NSWindowDelegate,
             pane.scroll.rulersVisible = lineNumbersVisible
             panes.append(pane)
             pane.applyConfiguration(configuration ?? EditorConfiguration())
-            editorSplit.addArrangedSubview(pane.scroll)
+            editorSplit.addArrangedSubview(pane.view)
         }
         editorSplit.adjustSubviews()
         refreshSplitControls()
@@ -2446,11 +2500,11 @@ final class EditorWorkspace: NSObject, NSWindowDelegate,
 
     private func updateStatus() {
         refreshSplitControls()
-        let editing = currentDocument != nil
+        let editing = currentDocument?.isTextDocument == true
         for button in [status.encoding, status.lineEnding, status.indentation, status.syntax] { button.isHidden = !editing }
         status.needsLayout = true
         updateSidebarToggle()
-        guard let document = currentDocument, let textView = currentTextView else {
+        guard let document = currentDocument else {
             statusMenuSignature = ""
             for menu in [saveEncodingMenu, reopenEncodingMenu, mainIndentationMenu, mainLineEndingMenu, mainSyntaxMenu] { menu?.removeAllItems() }
             status.location.stringValue = projectRoot == nil ? "Ready" : "Workspace ready"
@@ -2460,6 +2514,17 @@ final class EditorWorkspace: NSObject, NSWindowDelegate,
             refreshMarkdown(); refreshHome()
             return
         }
+        if let asset = document.imageAsset {
+            statusMenuSignature = ""
+            for menu in [saveEncodingMenu, reopenEncodingMenu, mainIndentationMenu, mainLineEndingMenu, mainSyntaxMenu] { menu?.removeAllItems() }
+            status.location.stringValue = "Image · " + asset.summary + " · Read-only"
+            window.title = document.displayName + " — Source Editor"
+            window.isDocumentEdited = false; window.representedURL = document.fileURL
+            updateFileLocationTitle()
+            for pane in panes where pane.document === document { pane.imagePreview?.update(asset) }
+            refreshMarkdown(); return
+        }
+        guard let textView = currentTextView else { return }
         let source = document.storage.string as NSString
         let selection = textView.selectedRange()
         let offset = min(selection.location, source.length)
@@ -3023,7 +3088,7 @@ final class EditorWorkspace: NSObject, NSWindowDelegate,
     func cancelPendingClose() {
         guard pendingTermination || pendingWindowClose else { return }
         pendingTermination = false; pendingWindowClose = false; discardDraftsOnClose = false
-        for pane in panes { pane.textView.isEditable = true }
+        for pane in panes { pane.textView.isEditable = pane.document.isTextDocument }
         monitoredPaths = []; refreshFileMonitor()
         if let recovery, !recovery.isFinishing, recoveryTimer == nil {
             recoveryTimer = Timer.scheduledTimer(withTimeInterval: 5, repeats: true) { [weak self] _ in self?.updateRecoverySnapshot() }
@@ -3121,7 +3186,9 @@ final class EditorWorkspace: NSObject, NSWindowDelegate,
         for document in documents where document.isModified {
             if !confirmClose(document) { return false }
         }
-        let restored = session.documents.map { $0.restore() }
+        let restored: [(EditorDocument, [NSRange])]
+        do { restored = try session.documents.map { try $0.restore() } }
+        catch { showNotice("Session could not be restored: " + error.localizedDescription); return false }
         guard !restored.isEmpty, restored.indices.contains(session.selectedIndex) else { return false }
         // Clear old pane resources before replacing the document owner list.
         for view in editorSplit.arrangedSubviews { editorSplit.removeArrangedSubview(view); view.removeFromSuperview() }
@@ -3207,6 +3274,7 @@ final class EditorWorkspace: NSObject, NSWindowDelegate,
 
     @discardableResult
     private func save(_ document: EditorDocument, saveAs: Bool = false) -> Bool {
+        guard document.isTextDocument else { return false }
         var target: URL?
         if saveAs || document.fileURL == nil {
             let panel = NSSavePanel()
@@ -3274,6 +3342,9 @@ final class EditorWorkspace: NSObject, NSWindowDelegate,
         }
         do {
             try document.reopen(using: document.diskEncoding, discardChanges: true)
+            if let asset = document.imageAsset {
+                for pane in panes where pane.document === document { pane.imagePreview?.update(asset, force: true) }
+            }
             resetSelectionsAfterReload(document)
             rebuildTabs()
             updateStatus()
@@ -3494,7 +3565,7 @@ final class EditorWorkspace: NSObject, NSWindowDelegate,
             guard let self, let document else { return }
             self.withDocument(document) { self.save(document) }
         })
-        menu.addItem(actionItem("Save As…") { [weak self, weak document] in
+        menu.addItem(actionItem("Save As…", enabled: document.isTextDocument) { [weak self, weak document] in
             guard let self, let document else { return }
             self.withDocument(document) { self.save(document, saveAs: true) }
         })
@@ -3803,7 +3874,7 @@ final class EditorWorkspace: NSObject, NSWindowDelegate,
         guard !pendingTermination, !pendingWindowClose, splitEnabled, panes.count == 2 else { return }
         if markdownViewMode == .preview { setMarkdownMode(.edit) }
         let next = 1 - activePane
-        window.makeFirstResponder(panes[next].textView)
+        window.makeFirstResponder(panes[next].focusView)
     }
     @objc private func openInOtherPane() {
         guard !pendingTermination, !pendingWindowClose, !documents.isEmpty else { return }
@@ -3836,9 +3907,16 @@ final class EditorWorkspace: NSObject, NSWindowDelegate,
     }
 
     func focusContent() {
-        if let view = currentTextView { window.makeFirstResponder(view) }
+        if panes.indices.contains(activePane) { window.makeFirstResponder(panes[activePane].focusView) }
         else { window.makeFirstResponder(workspaceHome) }
     }
+
+    private var currentImagePreview: ImagePreviewView? { panes.indices.contains(activePane) ? panes[activePane].imagePreview : nil }
+    @objc private func fitImage() { currentImagePreview?.fitToWindow() }
+    @objc private func actualImageSize() { currentImagePreview?.actualSize() }
+    @objc private func zoomImageIn() { currentImagePreview?.zoomIn() }
+    @objc private func zoomImageOut() { currentImagePreview?.zoomOut() }
+    @objc private func reloadImage() { if currentImagePreview != nil { _ = revertCurrentDocument() } }
 
     private func exitFocusFromEscape() -> Bool {
         guard focusLayout != nil, !fullScreenTransition else { return false }
@@ -4081,6 +4159,7 @@ final class EditorWorkspace: NSObject, NSWindowDelegate,
     }
 
     private func enableFind(replace: Bool) {
+        guard currentDocument?.isTextDocument != false else { return }
         findBar.isHidden = false
         replaceRow.isHidden = !replace
         editorArea.needsLayout = true
@@ -4095,7 +4174,7 @@ final class EditorWorkspace: NSObject, NSWindowDelegate,
     @objc private func hideFind() { findBar.isHidden = true; editorArea.needsLayout = true; focusContent() }
 
     private var findKey: FindKey? {
-        guard let document = currentDocument else { return nil }
+        guard let document = currentDocument, document.isTextDocument else { return nil }
         return FindKey(document: ObjectIdentifier(document), revision: document.revision,
             query: findField.stringValue, regex: regexToggle.state == .on, caseSensitive: caseToggle.state == .on)
     }
@@ -4328,6 +4407,11 @@ final class EditorWorkspace: NSObject, NSWindowDelegate,
         case "dismiss_palette": palette.dismiss()
         case "quick_open": quickOpen()
         case "open_file_location": focusFileLocation()
+        case "image_fit": fitImage()
+        case "image_actual_size": actualImageSize()
+        case "image_zoom_in": zoomImageIn()
+        case "image_zoom_out": zoomImageOut()
+        case "image_reload": reloadImage()
         case "build": runBuildAction()
         case "cancel_build": cancelBuild()
         case "run_plugin": runPluginAction()

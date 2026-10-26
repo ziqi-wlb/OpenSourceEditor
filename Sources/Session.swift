@@ -9,14 +9,22 @@ struct EditorSession: Codable {
         var settings: DocumentSettings?
         var encoding: EditorEncoding?
         var diskEncoding: EditorEncoding?
+        var isImage: Bool? = nil
         init(document: EditorDocument, ranges: [NSRange]) {
             path = document.fileURL?.path; diskDigest = document.diskDigestHex
             text = document.storage.string; selections = ranges.map { [$0.location, $0.length] }
             settings = document.settings; encoding = document.encoding; diskEncoding = document.diskEncoding
+            isImage = document.isTextDocument ? nil : true
         }
-        func restore() -> (EditorDocument, [NSRange]) {
+        func restore() throws -> (EditorDocument, [NSRange]) {
+            if isImage == true {
+                guard let path else { throw EditorFailure.invalidEdit("Image session entry has no file path.") }
+                let document = try EditorDocument.open(URL(fileURLWithPath: path), asImage: true)
+                guard !document.isTextDocument else { throw EditorFailure.invalidEdit("The saved image path no longer identifies an image.") }
+                return (document, [NSRange(location: 0, length: 0)])
+            }
             let document: EditorDocument
-            if let path, let diskDigest, let opened = try? EditorDocument.open(URL(fileURLWithPath: path), encoding: diskEncoding, settings: settings ?? DocumentSettings()), opened.diskDigestHex == diskDigest {
+            if let path, let diskDigest, let opened = try? EditorDocument.open(URL(fileURLWithPath: path), encoding: diskEncoding, settings: settings ?? DocumentSettings()), opened.isTextDocument, opened.diskDigestHex == diskDigest {
                 document = opened
             } else {
                 // Missing or changed original files recover into an untitled buffer.

@@ -18,6 +18,8 @@ final class EditorDocument: NSObject, NSTextStorageDelegate {
     let storage: NSTextStorage
     let undoManager = UndoManager()
     private(set) var fileURL: URL?
+    private(set) var imageAsset: EditorImageAsset?
+    var isTextDocument: Bool { imageAsset == nil }
     private(set) var revision: UInt64 = 0
     private(set) var encoding = EditorEncoding.utf8
     private(set) var settings: DocumentSettings
@@ -31,6 +33,7 @@ final class EditorDocument: NSObject, NSTextStorageDelegate {
     private(set) var diskEncoding = EditorEncoding.utf8
     var displayName: String { fileURL?.lastPathComponent ?? "Untitled" }
     var isModified: Bool {
+        guard isTextDocument else { return false }
         if encoding != diskEncoding { return true }
         if let cachedTextModified { return cachedTextModified }
         let source = storage.string as NSString
@@ -100,9 +103,15 @@ final class EditorDocument: NSObject, NSTextStorageDelegate {
         presentation = (font, paragraph.copy() as! NSParagraphStyle, foreground)
     }
 
-    static func open(_ url: URL, encoding: EditorEncoding? = nil, settings: DocumentSettings = DocumentSettings()) throws -> EditorDocument {
+    static func open(_ url: URL, encoding: EditorEncoding? = nil, settings: DocumentSettings = DocumentSettings(), asImage: Bool = false) throws -> EditorDocument {
         try settings.validate()
         let resolved = url.standardizedFileURL.resolvingSymlinksInPath()
+        if asImage || EditorImageAsset.supports(resolved) {
+            let asset = try EditorImageAsset.load(resolved)
+            let document = EditorDocument(settings: settings)
+            document.fileURL = resolved; document.imageAsset = asset
+            return document
+        }
         let data = try Data(contentsOf: resolved)
         let (text, codec) = try EditorEncoding.decode(data, using: encoding)
         let document = EditorDocument(text: text, settings: settings)
@@ -127,6 +136,10 @@ final class EditorDocument: NSObject, NSTextStorageDelegate {
 
     func relocate(to url: URL) {
         fileURL = url.standardizedFileURL.resolvingSymlinksInPath()
+        if let asset = imageAsset, let fileURL {
+            imageAsset = EditorImageAsset(url: fileURL, width: asset.width, height: asset.height,
+                bytes: asset.bytes, modified: asset.modified, frames: asset.frames)
+        }
         markChanged()
     }
     func detachAfterTrash() {
@@ -134,7 +147,7 @@ final class EditorDocument: NSObject, NSTextStorageDelegate {
         markChanged()
     }
     func acceptExternalText(_ text: String, encoding: EditorEncoding, digest: Data) {
-        guard !isModified else { return }
+        guard isTextDocument, !isModified else { return }
         storage.replaceCharacters(in: NSRange(location: 0, length: storage.length), with: text)
         savedText = text; self.encoding = encoding; diskEncoding = encoding; diskDigest = digest
         settings.lineEnding = LineEnding.detect(in: text); cachedTextModified = false
@@ -144,6 +157,7 @@ final class EditorDocument: NSObject, NSTextStorageDelegate {
     private func notifyChanged() { NotificationCenter.default.post(name: .editorDocumentChanged, object: self) }
 
     func updateSettings(_ value: DocumentSettings) throws {
+        try requireTextDocument()
         try value.validate()
         guard settings != value else { return }
         settings = value
@@ -155,12 +169,18 @@ final class EditorDocument: NSObject, NSTextStorageDelegate {
     }
 
     func setEncoding(_ value: EditorEncoding) throws {
+        try requireTextDocument()
         _ = try value.encode(storage.string)
         changeUndoably(text: storage.string, encoding: value, ending: settings.lineEnding, actionName: "Set Encoding")
     }
 
     func reopen(using value: EditorEncoding? = nil, discardChanges: Bool = false) throws {
         guard let url = fileURL else { throw EditorFailure.missingDestination }
+        if imageAsset != nil {
+            imageAsset = try EditorImageAsset.load(url)
+            markChanged()
+            return
+        }
         guard discardChanges || !isModified else { throw EditorFailure.invalidEdit("文档有未保存的文本或编码更改；重新打开前请保存，或明确丢弃更改。") }
         let data = try Data(contentsOf: url)
         let (text, decodedEncoding) = try EditorEncoding.decode(data, using: value)
@@ -176,6 +196,7 @@ final class EditorDocument: NSObject, NSTextStorageDelegate {
 
     @discardableResult
     func convertLineEndings(to value: LineEnding, selections: [NSRange]) -> TextEditResult {
+        guard isTextDocument else { return TextEditResult(text: storage.string, selections: selections, error: "Image previews are read-only.") }
         let result = TextOperations.convertingLineEndings(in: storage.string, selections: selections, to: value)
         guard result.error == nil else { return result }
         changeUndoably(text: result.text, encoding: encoding, ending: value, actionName: "Convert Line Endings")
@@ -185,6 +206,7 @@ final class EditorDocument: NSObject, NSTextStorageDelegate {
     // Recovery preserves the selected codec even when later edits are no longer
     // representable in it. Save remains the boundary that must reject data loss.
     func restoreSessionState(text: String, encoding: EditorEncoding?, settings: DocumentSettings?) {
+        guard isTextDocument else { return }
         let changed = !storage.string.utf16.elementsEqual(text.utf16)
         storage.replaceCharacters(in: NSRange(location: 0, length: storage.length), with: text)
         if let encoding { self.encoding = encoding }
@@ -194,6 +216,7 @@ final class EditorDocument: NSObject, NSTextStorageDelegate {
     }
 
     func save(to url: URL? = nil, allowOverwrite: Bool = false) throws {
+        try requireTextDocument()
         guard let requested = url ?? fileURL else { throw EditorFailure.missingDestination }
         let destination = requested.standardizedFileURL.resolvingSymlinksInPath()
         let exists = FileManager.default.fileExists(atPath: destination.path)
@@ -221,6 +244,7 @@ final class EditorDocument: NSObject, NSTextStorageDelegate {
 
     @discardableResult
     func replace(_ replacements: [TextReplacement], actionName: String = "Edit") -> TextEditResult {
+        guard isTextDocument else { return TextEditResult(text: storage.string, selections: [], error: "Image previews are read-only.") }
         let previous = storage.string
         let result = TextOperations.apply(in: previous, edits: replacements)
         guard result.error == nil else { return result }
@@ -233,6 +257,7 @@ final class EditorDocument: NSObject, NSTextStorageDelegate {
     }
 
     private func changeUndoably(text: String, encoding: EditorEncoding, ending: LineEnding, actionName: String) {
+        guard isTextDocument else { return }
         let previous = storage.string, previousEncoding = self.encoding, previousEnding = settings.lineEnding
         let textChanged = !previous.utf16.elementsEqual(text.utf16)
         guard textChanged || previousEncoding != encoding || previousEnding != ending else { return }
@@ -245,6 +270,10 @@ final class EditorDocument: NSObject, NSTextStorageDelegate {
         undoManager.setActionName(actionName)
         undoManager.endUndoGrouping()
         if textChanged { markChanged() } else { notifyChanged() }
+    }
+
+    private func requireTextDocument() throws {
+        guard isTextDocument else { throw EditorFailure.invalidEdit("Image previews are read-only. Use an image editor to change the original.") }
     }
 }
 

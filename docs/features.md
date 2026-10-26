@@ -2,7 +2,7 @@
 
 [中文](features.zh-CN.md)
 
-This matrix describes current source capabilities. macOS 0.9.8 uses Swift/AppKit; Windows x64 is a separate experimental implementation. They do not fully share UI, editing core or extension host. macOS tests do not establish Windows stability or features.
+This matrix describes current source capabilities. macOS 0.9.9 uses Swift/AppKit; Windows x64 is a separate experimental implementation. They do not fully share UI, editing core or extension host. macOS tests do not establish Windows stability or features.
 
 | Everyday capability | macOS | Windows |
 | --- | --- | --- |
@@ -18,6 +18,7 @@ This matrix describes current source capabilities. macOS 0.9.8 uses Swift/AppKit
 | Lines/indentation | Duplicate/delete/move, comments, tab/space conversion/detection | Basic tab/space width |
 | Encoding/line endings | Encoding/BOM menus, reopen encoding, LF/CRLF/CR | UTF-8/BOM, UTF-16 LE BOM, LF/CRLF |
 | Themes/fonts | Dark/light, size, installed monospace menu/custom font, SF Symbols buttons | Dark/light text appearance; fewer features |
+| Image files | Read-only raster tabs, fit/zoom, metadata, mixed panes, file/session restoration | Not implemented |
 | Markdown reading | Edit/Preview/Side by Side, one-click Outline, direct body, fragment links, HTML export | Not implemented |
 | Work notes | Meeting/daily/task templates, formatting, timestamp, list continuation, tasks, image paste | Not implemented |
 | Recent files/workspaces | Files, preferences, projects, order, layout and selections | No equivalent session recovery |
@@ -62,3 +63,5 @@ Preferences → Remember Previous Workspace defaults on and restores folders as 
 New windows and folder-only projects show a native home with quick actions and recent entries. Close the last file tab to return home. Use the sidebar icons in the project header/titlebar or ⌃⌘B to expand the main area. See [workspace home](workspace-home.md).
 
 macOS 0.9.6 supports left/right and top/bottom editor splits with independent file selectors, cursors and scrolling. Use the titlebar split icon or ⌥⌘2; ⌥⌘3 focuses the other pane and ⌥⌘1 keeps the active single editor. Workspace/session restoration retains pane state. See [editor splits](editor-splits.md).
+
+See [image preview](image-preview.md) for formats and resource limits.

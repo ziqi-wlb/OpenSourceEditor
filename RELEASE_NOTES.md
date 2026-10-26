@@ -4,6 +4,11 @@
 
 Author: ziqi-wlb · [550461053@qq.com](mailto:550461053@qq.com)
 
+## 0.9.9
+
+- Open raster images in native read-only tabs and mixed image/text splits; add fit, source-size, zoom, metadata and file context actions.
+- Decode bounded previews in the background, release hidden images, restore image file references in workspaces/sessions and register supported images in Finder Open With.
+
 ## 0.9.8
 
 - Reuse the top window file title for path input: click to edit, Return/Open to open, and Escape or leaving the input to restore the title. Remove the permanent location row.

@@ -22,7 +22,7 @@ enum ProductFeatureTests {
     static func readAbruptRecovery(_ url: URL) -> Int32 {
         do {
             let session = try EditorSession.load(url)
-            let restored = session.documents[0].restore()
+            let restored = try session.documents[0].restore()
             let ok = restored.0.storage.string == "unsaved recovery 中文😀" && restored.0.isModified && restored.0.fileURL == nil && restored.1 == [.init(location: 3, length: 0)]
             print("{\"ok\":\(ok),\"passed\":\(ok ? 1 : 0)}")
             return ok ? 0 : 1

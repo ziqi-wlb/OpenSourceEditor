@@ -5,8 +5,8 @@
   <key>CFBundleDisplayName</key><string>Source Editor</string>
   <key>CFBundleIdentifier</key><string>org.sourceeditor.SourceEditor</string>
   <key>CFBundleExecutable</key><string>source-editor</string>
-  <key>CFBundleVersion</key><string>21</string>
-  <key>CFBundleShortVersionString</key><string>0.9.8</string>
+  <key>CFBundleVersion</key><string>22</string>
+  <key>CFBundleShortVersionString</key><string>0.9.9</string>
   <key>CFBundleIconFile</key><string>SourceEditor.icns</string>
   <key>CFBundlePackageType</key><string>APPL</string>
   <key>LSMultipleInstancesProhibited</key><true/>
@@ -24,6 +24,12 @@
     <key>LSHandlerRank</key><string>Alternate</string>
     <key>LSItemContentTypes</key><array><string>net.daringfireball.markdown</string></array>
     <key>CFBundleTypeExtensions</key><array><string>md</string><string>markdown</string><string>mdown</string><string>mkd</string></array>
+  </dict><dict>
+    <key>CFBundleTypeName</key><string>Image</string>
+    <key>CFBundleTypeRole</key><string>Viewer</string>
+    <key>LSHandlerRank</key><string>Alternate</string>
+    <key>LSItemContentTypes</key><array><string>public.png</string><string>public.jpeg</string><string>com.compuserve.gif</string><string>com.microsoft.bmp</string><string>public.tiff</string><string>public.heic</string><string>public.heif</string><string>org.webmproject.webp</string><string>com.microsoft.ico</string></array>
+    <key>CFBundleTypeExtensions</key><array><string>png</string><string>jpg</string><string>jpeg</string><string>jpe</string><string>gif</string><string>bmp</string><string>tif</string><string>tiff</string><string>heic</string><string>heif</string><string>webp</string><string>ico</string></array>
   </dict></array>
   <key>UTImportedTypeDeclarations</key><array><dict>
     <key>UTTypeIdentifier</key><string>net.daringfireball.markdown</string>
