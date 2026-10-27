@@ -51,7 +51,7 @@ python3 tests/recovery_restart_test.py '.build/Source Editor Tests.app/Contents/
 python3 tests/workspace_restart_test.py '.build/Source Editor Tests.app/Contents/MacOS/source-editor'
 python3 tests/check_portability.py
 python3 tests/check_documentation.py
-python3 tests/run_tests.py image-preview-099-recheck --ui --arch universal
+python3 tests/run_tests.py typing-0910-recheck --suite typing --ui --arch universal --build-timeout 420
 python3 scripts/generate_release_notes.py --check
 ```
 
@@ -86,3 +86,5 @@ macOS 0.9.6 supports left/right and top/bottom editor splits with independent fi
 macOS 0.9.9 reuses the top window title for transient file-path input, removing the permanent editor row. Single-click the title or use ⌥⌘O; Return/Open opens and Escape restores the title. Fullscreen uses the same input as a temporary overlay without shrinking the editor. See [file title and path input](file-location.md). Native checks include actual title clicks, unchanged editor height, preview, home, splits and Focus Mode; acceptance belongs to the current run.
 
 Image acceptance additionally runs `--image-ui-test=` and separate-process image restart checks. Fixtures, decode/cancellation results and screenshots remain under the matching run; the unchanged production source digests identify the accepted package. See [image preview](image-preview.md).
+
+Use checks matching the changed behavior during development. `--suite typing` runs document/core edits and native typing/splits, omitting unrelated runtime suites; `--suite full` is available for cross-module or release verification. `--typing-ui-test=` checks long-list Return, scrolling, undo and text colors. `--build-timeout` adjusts compiler deadlines on busy hosts without changing runtime-check deadlines. See [editing stability](typing-stability.md).

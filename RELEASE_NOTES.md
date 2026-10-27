@@ -4,6 +4,11 @@
 
 Author: ziqi-wlb · [550461053@qq.com](mailto:550461053@qq.com)
 
+## 0.9.10
+
+- Keep caret, viewport and unchanged split layout stable during list Return, Tab and custom-edit undo/redo.
+- Use base colors for Markdown prose numbers and quoted text; keep source-code literal highlighting.
+
 ## 0.9.9
 
 - Open raster images in native read-only tabs and mixed image/text splits; add fit, source-size, zoom, metadata and file context actions.

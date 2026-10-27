@@ -4,6 +4,7 @@
 
 | 内容 | 文档 |
 | --- | --- |
+| 回车、滚动与文字颜色 | [编辑稳定性](typing-stability.zh-CN.md) |
 | 构建、安装与使用入口 | [应用 README](../README.zh-CN.md) |
 | 架构、模块与实现原理 | [Architecture](architecture.zh-CN.md) |
 | macOS / Windows 功能矩阵与快捷入口 | [Features](features.zh-CN.md) |

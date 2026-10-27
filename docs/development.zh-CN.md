@@ -53,7 +53,7 @@ python3 tests/recovery_restart_test.py '.build/Source Editor Tests.app/Contents/
 python3 tests/workspace_restart_test.py '.build/Source Editor Tests.app/Contents/MacOS/source-editor'
 python3 tests/check_portability.py
 python3 tests/check_documentation.py
-python3 tests/run_tests.py image-preview-099-recheck --ui --arch universal
+python3 tests/run_tests.py typing-0910-recheck --suite typing --ui --arch universal --build-timeout 420
 python3 scripts/generate_release_notes.py --check
 ```
 
@@ -88,3 +88,5 @@ macOS 0.9.6 支持左右/上下编辑区切分，各区域独立选择文件并�
 macOS 0.9.9 复用窗口顶部标题进行临时路径输入，移除编辑区常驻路径行。单击标题或按 ⌥⌘O，回车/Open 打开，Escape 恢复标题。全屏使用同一输入控件的临时浮层，不压缩编辑区。参见[文件标题与路径输入](file-location.zh-CN.md)。原生检查包含真实标题点击、编辑区高度保持、预览、主页、切分和专注模式；验收属于当前运行。
 
 图片验收另外执行 `--image-ui-test=` 与独立进程图片重启检查。图片样本、解码/取消结果及截图保存在对应运行目录；使用固定的生产源码摘要标识验收包。见[图片预览](image-preview.zh-CN.md)。
+
+日常开发按改动范围运行检查。`--suite typing` 运行文档/核心编辑和原生输入/切分，省去其他运行套件；涉及跨模块或发布验证时可用 `--suite full`。`--typing-ui-test=` 验证长列表回车、滚动、撤销和文字颜色。繁忙主机可用 `--build-timeout` 调整编译等待上限，不改变运行检查时限。参见[编辑稳定性](typing-stability.zh-CN.md)。

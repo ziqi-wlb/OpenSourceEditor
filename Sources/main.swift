@@ -34,6 +34,18 @@ if let flag = arguments.firstIndex(of: "--contract-test"), flag + 1 < arguments.
 if arguments.contains("--benchmark") { exit(BenchmarkRunner.run()) }
 let application = NSApplication.shared
 application.setActivationPolicy(.regular)
+// Standalone UI fixtures bypass EditorAppDelegate.launch. Match its activation
+// boundary so native mouse/key events reach this test application's windows.
+application.activate(ignoringOtherApps: true)
+if let flag = arguments.first(where: { $0.hasPrefix("--typing-ui-test=") }) {
+    setbuf(stdout, nil)
+    let directory = URL(fileURLWithPath: String(flag.dropFirst("--typing-ui-test=".count)))
+    Timer.scheduledTimer(withTimeInterval: 0.1, repeats: false) { _ in
+        Task { @MainActor in exit(await TypingUITests.run(directory: directory)) }
+    }
+    application.run()
+    exit(1)
+}
 if let flag = arguments.first(where: { $0.hasPrefix("--workspace-restart-write=") || $0.hasPrefix("--workspace-restart-read=") || $0.hasPrefix("--workspace-ui-test=") || $0.hasPrefix("--home-ui-test=") || $0.hasPrefix("--split-ui-test=") || $0.hasPrefix("--split-restart-write=") || $0.hasPrefix("--split-restart-read=") || $0.hasPrefix("--file-location-ui-test=") || $0.hasPrefix("--image-ui-test=") || $0.hasPrefix("--image-restart-write=") || $0.hasPrefix("--image-restart-read=") }) {
     setbuf(stdout, nil)
     let directory = URL(fileURLWithPath: String(flag.split(separator: "=", maxSplits: 1)[1]), isDirectory: true)

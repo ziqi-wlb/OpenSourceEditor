@@ -162,6 +162,18 @@ enum EditorSplitUITests {
             check("Inactive file-tab context menu has split actions", splitItem != nil && tabMenu?.item(withTitle: "Split Down") != nil)
             if let item = splitItem, let action = item.action { _ = NSApp.sendAction(action, to: item.target, from: item) }
             check("Inactive-tab splitting opens that file beside the active one", workspace.paneViewsForTesting[0].textStorage === firstDocument.storage && workspace.paneViewsForTesting[1].textStorage === thirdDocument.storage && workspace.paneViewsForTesting[1] === thirdView)
+            // Other restoration fixtures created and closed key windows above.
+            // Establish the target window before testing real mouse/Save routing.
+            NSApp.activate(ignoringOtherApps: true)
+            workspace.window.makeKeyAndOrderFront(nil)
+            let focusDeadline = Date().addingTimeInterval(2)
+            while !(NSApp.isActive && NSApp.keyWindow === workspace.window), Date() < focusDeadline { await pump() }
+            let ownsFocus = NSApp.isActive && NSApp.keyWindow === workspace.window
+            check("Mouse routing fixture owns the active window", ownsFocus)
+            guard ownsFocus else {
+                print(String(decoding: try! JSONSerialization.data(withJSONObject: ["passed": passed, "failed": failures.count, "failures": failures], options: [.sortedKeys]), as: UTF8.self))
+                return 1
+            }
             let point = thirdView.convert(NSPoint(x: 24, y: 18), to: nil)
             func click(_ type: NSEvent.EventType) -> NSEvent { NSEvent.mouseEvent(with: type, location: point, modifierFlags: [], timestamp: ProcessInfo.processInfo.systemUptime, windowNumber: workspace.window.windowNumber, context: nil, eventNumber: 0, clickCount: 1, pressure: 1)! }
             NSApp.postEvent(click(.leftMouseUp), atStart: false); workspace.window.sendEvent(click(.leftMouseDown)); await pump()

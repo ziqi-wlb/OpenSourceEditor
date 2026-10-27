@@ -19,14 +19,22 @@ def main():
     parser = argparse.ArgumentParser()
     parser.add_argument('name', nargs='?', default=datetime.datetime.now(datetime.timezone.utc).strftime('local-%Y%m%d-%H%M%S'))
     parser.add_argument('--ui', action='store_true', help='Run desktop checks in a logged-in macOS GUI session')
+    parser.add_argument('--suite', choices=['full', 'typing'], default='full', help='typing limits runtime checks to document edits, native typing and splits')
     parser.add_argument('--arch', choices=['arm64', 'x86_64', 'universal'], default=os.uname().machine)
+    parser.add_argument('--build-timeout', type=int, default=300, help='Seconds allowed for each compiler invocation on busy hosts')
     args = parser.parse_args()
+    if args.build_timeout <= 0: parser.error('--build-timeout must be positive')
     if not re.fullmatch(r'[a-zA-Z0-9_-]+', args.name): parser.error('invalid run name')
     app = Path(__file__).resolve().parents[1]
     output = app / '.build/test-results' / args.name
     output.mkdir(parents=True, exist_ok=False)
     rows = {}
+    omitted = []
+    selected = None if args.suite == 'full' else {'release-build', 'release-version', 'release-help', 'portability', 'documentation', 'test-build', 'core', 'document-settings', 'typing-ui', 'split-ui'}
     def run(kind, command, timeout=120, style=None):
+        if selected is not None and kind not in selected:
+            omitted.append(kind)
+            return
         folder = output / kind
         folder.mkdir()
         started = time.monotonic()
@@ -58,13 +66,13 @@ def main():
         (output/'results.json').write_text(json.dumps({'status': 'running' if code == 0 else 'failed', 'checks': rows}, indent=2)+'\n')
         print(kind+': '+str(row), flush=True)
         if code != 0: raise SystemExit(code if code > 0 else 1)
-    run('release-build', ['bash','build.sh','--arch',args.arch],timeout=300)
+    run('release-build', ['bash','build.sh','--arch',args.arch],timeout=args.build_timeout)
     release = app/'.build/Source Editor.app/Contents/MacOS/source-editor'
     run('release-version', [str(release),'--version'])
     run('release-help', [str(release),'--help'])
     run('portability', [sys.executable,'tests/check_portability.py'])
     run('documentation', [sys.executable,'tests/check_documentation.py'],style='json')
-    run('test-build', ['bash','build.sh','--tests'],timeout=180)
+    run('test-build', ['bash','build.sh','--tests'],timeout=args.build_timeout)
     binary = app/'.build/Source Editor Tests.app/Contents/MacOS/source-editor'
     for kind, flag in [('core','--self-test'),('preferences','--preferences-test'),('document-settings','--document-settings-test'),('product-features','--product-features-test'),('daily-features','--daily-features-test'),('services','--service-test'),('benchmark','--benchmark')]:
         run(kind,[str(binary),flag],style='json')
@@ -72,6 +80,7 @@ def main():
     run('sdk',[sys.executable,'tests/plugin_host_test.py'],style='sdk')
     run('recovery-crash',[sys.executable,'tests/recovery_crash_test.py',str(binary)],style='json')
     if args.ui:
+        run('typing-ui', [str(binary),'--typing-ui-test='+str(output/'typing-ui-artifacts')],timeout=30,style='json')
         run('image-ui', [str(binary),'--image-ui-test='+str(output/'image-ui-artifacts')],timeout=60,style='json')
         run('image-restart', [sys.executable,'tests/image_restart_test.py',str(binary)],timeout=60,style='json')
         run('file-location-ui', [str(binary),'--file-location-ui-test='+str(output/'file-location-ui-artifacts')],timeout=45,style='json')
@@ -88,7 +97,7 @@ def main():
         run('multi-window-quit',[str(binary),'--multi-window-quit-test'],timeout=15,style='json')
     inputs = sorted((app/'Sources').glob('*.swift'))+[app/'build.sh',app/'Info.plist',app/'scripts/generate_icon.swift']
     inputs += sorted(p for p in (app/'Resources').rglob('*') if p.is_file() and p.suffix in ('.py','.json'))
-    summary = {'status':'passed','checks':rows,'ui_executed':args.ui,
+    summary = {'status':'passed','checks':rows,'ui_executed':args.ui,'suite':args.suite,'omitted_checks':omitted,
                'release_binary':{'sha256':digest(release),'bytes':release.stat().st_size},
                'test_binary':{'sha256':digest(binary),'bytes':binary.stat().st_size},
                'scope':'tests compile the same production sources with EDITOR_TESTS; release CLI smoke tested separately',

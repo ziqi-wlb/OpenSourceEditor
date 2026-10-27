@@ -21,14 +21,29 @@ enum UITestRunner {
             return delegate.snapshot[key] as? Bool == false
         }
         func postKey(_ characters: String, keyCode: UInt16, modifiers: NSEvent.ModifierFlags = [], ignoringModifiers: String? = nil) {
+            if !NSApp.isActive {
+                NSApp.activate(ignoringOtherApps: true)
+                (NSApp.modalWindow ?? delegate.window).makeKeyAndOrderFront(nil)
+            }
             for type in [NSEvent.EventType.keyDown, .keyUp] {
                 if let event = NSEvent.keyEvent(with: type, location: .zero, modifierFlags: modifiers,
-                    timestamp: ProcessInfo.processInfo.systemUptime, windowNumber: NSApp.modalWindow?.windowNumber ?? NSApp.keyWindow?.windowNumber ?? delegate.window.windowNumber,
+                    timestamp: ProcessInfo.processInfo.systemUptime, windowNumber: NSApp.modalWindow?.windowNumber ?? delegate.window.windowNumber,
                     context: nil, characters: characters, charactersIgnoringModifiers: ignoringModifiers ?? (modifiers.contains(.shift) ? characters.uppercased() : characters.lowercased()),
                     isARepeat: false, keyCode: keyCode) {
                     NSApp.postEvent(event, atStart: false)
                 }
             }
+        }
+        func activateFixture() async -> Bool {
+            NSApp.activate(ignoringOtherApps: true)
+            delegate.window.makeKeyAndOrderFront(nil)
+            let deadline = Date().addingTimeInterval(2)
+            while Date() < deadline {
+                if NSApp.isActive && NSApp.keyWindow === delegate.window { return true }
+                await pump(0.02)
+            }
+            print("DETAIL fixture focus active=\(NSApp.isActive) key=\(NSApp.keyWindow?.windowNumber ?? -1) expected=\(delegate.window.windowNumber)")
+            return false
         }
         func descendants(_ parent: NSView) -> [NSView] { parent.subviews.flatMap { [$0] + descendants($0) } }
         func submitInputDialog(_ identifier: String, keys: [(String, UInt16, NSEvent.ModifierFlags)]) async -> Bool {
@@ -69,6 +84,11 @@ enum UITestRunner {
             try data.write(to: directory.appendingPathComponent(filename))
         }
         func selectStatus(_ identifier: String, path: [String], additionalKeys: [(String, UInt16, NSEvent.ModifierFlags)] = [], clickModalButton: String? = nil) async -> Bool {
+            // Modal dismissal and menu tracking finish on subsequent AppKit
+            // turns. Wait for this window/control before the next mouse action.
+            guard await activateFixture() else { return false }
+            delegate.window.contentView?.layoutSubtreeIfNeeded()
+            await pump(0.05)
             guard let button = descendants(delegate.window.contentView!).first(where: { $0.identifier?.rawValue == identifier }) as? NSPopUpButton,
                   !button.isHiddenOrHasHiddenAncestor, button.visibleRect.height > 10, let initialMenu = button.menu else { return false }
             var menu = initialMenu
@@ -193,6 +213,7 @@ enum UITestRunner {
         guard let document = delegate.currentDocument, var view = delegate.currentTextView else { print("FAIL missing real editor"); return 1 }
         let initialIndex = delegate.selectedIndex
         let otherIndex = delegate.documents.indices.first(where: { $0 != initialIndex }) ?? initialIndex
+        check("Native UI fixture owns the active window", await activateFixture())
         check("visible native window", delegate.window.isVisible && delegate.window.contentView != nil)
         check("launch does not show a blank child window", delegate.window.childWindows?.isEmpty ?? true)
         check("multiple file tabs", delegate.documents.count == 2)
@@ -212,7 +233,8 @@ enum UITestRunner {
             let returnAccepted = await selectStatus("status.indentation", path: ["Other Tab Width…"],
                 additionalKeys: [("a", 0, .command), ("9", 25, []), ("\r", 36, [])])
             check("custom tab width Return submits focused input", returnAccepted && document.settings.tabSize == 9)
-            _ = await selectStatus("status.indentation", path: ["Tab Width: 2"])
+            let restoredWidth = await selectStatus("status.indentation", path: ["Tab Width: 2"])
+            check("status restores tab width before keyboard editing", restoredWidth && document.settings.tabSize == 2)
             let spacesClicked = await selectStatus("status.indentation", path: ["Indent Using Spaces"])
             check("click status chooses spaces", spacesClicked && document.settings.translateTabsToSpaces)
             document.setTextUndoably("a", actionName: "Tab Fixture"); await pump()
@@ -311,7 +333,10 @@ enum UITestRunner {
             return true
         }
         document.setTextUndoably("copy 中文 paste", actionName: "Clipboard Fixture"); await pump()
+        _ = await activateFixture()
         view.setSelectedRange(NSRange(location: 5, length: 2)); delegate.window.makeFirstResponder(view)
+        await pump(0.05)
+        check("Clipboard fixture has the focused native editor", NSApp.isActive && NSApp.keyWindow === delegate.window && delegate.window.firstResponder === view && view.selectedRange() == NSRange(location: 5, length: 2))
         let copied = invokeEditMenu("Copy"); await pump()
         check("Copy menu routes to focused editor", copied && board.string(forType: .string) == "中文")
         let cut = invokeEditMenu("Cut"); await pump()

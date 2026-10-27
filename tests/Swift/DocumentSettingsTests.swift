@@ -27,6 +27,53 @@ enum DocumentSettingsTestRunner {
         func file(_ name: String, _ bytes: Data) throws -> URL {
             let url = directory.appendingPathComponent(name); try bytes.write(to: url); return url
         }
+        test("Custom text edits preserve literal Unicode and atomic undo redo") {
+            let pairs = [("😀", "😃"), ("😀", "🨀"), ("e\u{301}", "é"), ("e", "e\u{301}"),
+                ("prefix 👩‍💻 tail", "prefix 👩‍🔬 tail"), ("a\r\nb", "a\nb"),
+                ("", "中文😀"), ("中文😀", ""), ("a😀z", "az"), ("az", "a😀z")]
+            for (before, after) in pairs {
+                let document = EditorDocument(text: before)
+                document.setTextUndoably(after, actionName: "Fixture")
+                try check(document.storage.string.utf16.elementsEqual(after.utf16), "Literal edit result")
+                document.undoManager.undo()
+                try check(document.storage.string.utf16.elementsEqual(before.utf16), "Literal undo result")
+                document.undoManager.redo()
+                try check(document.storage.string.utf16.elementsEqual(after.utf16), "Literal redo result")
+            }
+        }
+        test("Small custom edits retain unchanged paragraph attributes") {
+            let document = EditorDocument(text: "head\nbody\ntail")
+            let font = NSFont.monospacedSystemFont(ofSize: 23, weight: .bold)
+            document.storage.addAttribute(.font, value: font, range: NSRange(location: 10, length: 4))
+            document.setTextUndoably("head\nbody!\ntail", actionName: "Fixture")
+            try check(document.storage.attribute(.font, at: 11, effectiveRange: nil) as? NSFont == font, "Unedited suffix font survives")
+            document.undoManager.undo()
+            try check(document.storage.attribute(.font, at: 10, effectiveRange: nil) as? NSFont == font, "Unedited suffix survives undo")
+        }
+        test("Retained document snapshots and save baselines survive in-place edits") {
+            let original = "# Work notes\n" + (1...300).map { "\($0). Work item 中文😀 \($0)\n" }.joined()
+            let document = EditorDocument(text: original)
+            document.checkpoint()
+            let retained = document.textSnapshot
+            let caret = (original as NSString).range(of: "275. Work item 中文😀 275").upperBound
+            let result = NoteEditing.newline(in: document.textSnapshot, selections: [NSRange(location: caret, length: 0)], settings: document.settings)
+            document.setTextUndoably(result.text, actionName: "Return fixture")
+            try check(retained.utf16.elementsEqual(original.utf16) && document.isModified, "Snapshot and baseline stay unchanged")
+            document.undoManager.undo()
+            try check(document.storage.string.utf16.elementsEqual(original.utf16) && !document.isModified, "Undo returns to the baseline")
+            document.undoManager.redo()
+            try check(document.storage.string.utf16.elementsEqual(result.text.utf16) && document.isModified, "Redo retains edited contents")
+        }
+        test("Markdown prose excludes code literal colors without changing code highlighting") {
+            let markdown = SyntaxHighlights(text: "# Plan\n1. Task 123 \"quoted\"\n", syntax: "md")
+            try check(markdown.groups[0].count == 1 && markdown.groups[1].isEmpty && markdown.groups[2].isEmpty, "Markdown headings remain styled, prose stays base")
+            for (syntax, text) in [("swift", "let number = 123; let text = \"quoted\""),
+                                   ("html", "<input size=123 title=\"quoted\">"),
+                                   ("xml", "<item size=123 title=\"quoted\" />")] {
+                let highlights = SyntaxHighlights(text: text, syntax: syntax)
+                try check(highlights.groups[1].count == 1 && highlights.groups[2].count == 1, "Code/markup literals remain highlighted: " + syntax)
+            }
+        }
         test("Document position preserves scalar, tab and CRLF cursor semantics") {
             func reference(_ text: String, _ offset: Int, _ width: Int) -> (Int, Int) {
                 var line = 1, column = 0, previousCR = false

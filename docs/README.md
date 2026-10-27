@@ -4,6 +4,7 @@
 
 | Topic | Guide |
 | --- | --- |
+| Return, scrolling and text colors | [Editing stability](typing-stability.md) |
 | Build, install and use | [Application README](../README.md) |
 | Architecture and implementation | [Architecture](architecture.md) |
 | Features and shortcuts | [Features](features.md) |

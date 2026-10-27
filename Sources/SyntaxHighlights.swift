@@ -5,8 +5,11 @@ import Foundation
 struct SyntaxHighlights {
     let groups: [[NSRange]]
     private static let expressions: [EditorSyntax: [NSRegularExpression?]] = Dictionary(uniqueKeysWithValues: EditorSyntax.allCases.map { language in
-        let patterns: [String?] = [language.keywordPattern, #"\b\d+(?:\.\d+)?\b"#,
-                                  #"\"(?:\\.|[^\"\\])*\"|'(?:\\.|[^'\\])*'"#, language.commentPattern]
+        let codeLiterals = language.supportsHighlighting && language != .markdown
+        let patterns: [String?] = [language.keywordPattern,
+            codeLiterals ? #"\b\d+(?:\.\d+)?\b"# : nil,
+            codeLiterals ? #"\"(?:\\.|[^\"\\])*\"|'(?:\\.|[^'\\])*'"# : nil,
+            language.commentPattern]
         return (language, patterns.map { $0.map { try! NSRegularExpression(pattern: $0) } })
     })
     static let supported = Set(EditorSyntax.allCases.filter(\.supportsHighlighting).map(\.identifier))

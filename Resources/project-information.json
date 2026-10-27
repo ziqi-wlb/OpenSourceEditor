@@ -7,6 +7,19 @@
   },
   "releases": [
     {
+      "version": "0.9.10",
+      "changes": [
+        {
+          "english": "Keep caret, viewport and unchanged split layout stable during list Return, Tab and custom-edit undo/redo.",
+          "chinese": "修复列表回车、Tab 及自定义编辑撤销时的光标与滚动跳动，保留未变化文本的排版和切分区域现场。"
+        },
+        {
+          "english": "Use base colors for Markdown prose numbers and quoted text; keep source-code literal highlighting.",
+          "chinese": "Markdown 正文数字和引号内容使用正文颜色，代码文件继续保留数字和字符串语法高亮。"
+        }
+      ]
+    },
+    {
       "version": "0.9.9",
       "changes": [
         {

@@ -26,6 +26,9 @@ final class EditorDocument: NSObject, NSTextStorageDelegate {
     private var diskDigest: Data?
     var diskDigestHex: String? { diskDigest?.map { String(format: "%02x", $0) }.joined() }
     private var savedText: String
+    // A retained snapshot must own its characters rather than bridge TextKit's
+    // live string. Custom edits now mutate that storage in place.
+    var textSnapshot: String { String(decoding: storage.string.utf16, as: UTF16.self) }
     private var cachedTextModified: Bool? = false
     private var cachedLineIndex: DocumentLineIndex?
     private var cachedHighlights: (syntax: String, value: SyntaxHighlights)?
@@ -128,7 +131,7 @@ final class EditorDocument: NSObject, NSTextStorageDelegate {
     }
 
     func checkpoint() {
-        savedText = storage.string
+        savedText = textSnapshot
         cachedTextModified = false
         diskEncoding = encoding
         notifyChanged()
@@ -258,18 +261,37 @@ final class EditorDocument: NSObject, NSTextStorageDelegate {
 
     private func changeUndoably(text: String, encoding: EditorEncoding, ending: LineEnding, actionName: String) {
         guard isTextDocument else { return }
-        let previous = storage.string, previousEncoding = self.encoding, previousEnding = settings.lineEnding
+        let previous = textSnapshot, previousEncoding = self.encoding, previousEnding = settings.lineEnding
         let textChanged = !previous.utf16.elementsEqual(text.utf16)
         guard textChanged || previousEncoding != encoding || previousEnding != ending else { return }
         undoManager.beginUndoGrouping()
         undoManager.registerUndo(withTarget: self) { document in
             document.changeUndoably(text: previous, encoding: previousEncoding, ending: previousEnding, actionName: actionName)
         }
-        if textChanged { storage.replaceCharacters(in: NSRange(location: 0, length: storage.length), with: text) }
+        if textChanged { replaceChangedText(with: text) }
         self.encoding = encoding; settings.lineEnding = ending
         undoManager.setActionName(actionName)
         undoManager.endUndoGrouping()
         if textChanged { markChanged() } else { notifyChanged() }
+    }
+
+    // Custom commands return complete text, but TextKit must receive only the
+    // changed span. Replacing the whole buffer discards offscreen layout and
+    // shifts every pane's viewport even for a single Return or Tab.
+    private func replaceChangedText(with text: String) {
+        let before = storage.string as NSString, after = text as NSString
+        var start = 0
+        while start < before.length && start < after.length && before.character(at: start) == after.character(at: start) { start += 1 }
+        if start > 0 && ((start < before.length && UTF16.isTrailSurrogate(before.character(at: start))) ||
+                         (start < after.length && UTF16.isTrailSurrogate(after.character(at: start)))) { start -= 1 }
+        var suffix = 0
+        while suffix < before.length - start && suffix < after.length - start &&
+              before.character(at: before.length - suffix - 1) == after.character(at: after.length - suffix - 1) { suffix += 1 }
+        if suffix > 0 && (UTF16.isTrailSurrogate(before.character(at: before.length - suffix)) ||
+                          UTF16.isTrailSurrogate(after.character(at: after.length - suffix))) { suffix -= 1 }
+        let range = NSRange(location: start, length: before.length - start - suffix)
+        let replacement = after.substring(with: NSRange(location: start, length: after.length - start - suffix))
+        storage.replaceCharacters(in: range, with: replacement)
     }
 
     private func requireTextDocument() throws {

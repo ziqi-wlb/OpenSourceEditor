@@ -278,6 +278,7 @@ private final class EditorTextView: NSTextView {
         undo.enableUndoRegistration()
         editor?.selectedRanges = selections.map { NSValue(range: $0) }
         editor?.didChangeText()
+        if let editor, let primary = selections.first { editor.scrollRangeToVisible(primary) }
         undo.setActionName(name)
         undo.endUndoGrouping()
     }
