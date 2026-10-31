@@ -10,15 +10,17 @@ def main():
     parser.add_argument('--with-tests',action='store_true')
     args=parser.parse_args()
     app=Path(__file__).resolve().parents[1]
-    files=[app/p for p in ('README.md','README.zh-CN.md','PERFORMANCE.md','PERFORMANCE.zh-CN.md','plugins.md','plugins.zh-CN.md','RELEASE_NOTES.md','RELEASE_NOTES.zh-CN.md','Info.plist','build.sh','package.sh','windows/.clang-format')]
-    folders=['Sources','Resources','scripts','windows','docs']+(['tests'] if args.with_tests else [])
-    extensions={'.swift','.py','.json','.sh','.cpp','.ps1','.md'}
+    files=[app/p for p in ('.gitignore','README.md','README.zh-CN.md','PERFORMANCE.md','PERFORMANCE.zh-CN.md','plugins.md','plugins.zh-CN.md','RELEASE_NOTES.md','RELEASE_NOTES.zh-CN.md','Info.plist','build.sh','package.sh','windows/.clang-format')]
+    files += [app/p for p in ('CONTRIBUTING.md','CONTRIBUTING.zh-CN.md') if (app/p).is_file()]
+    folders=['Sources','Resources','scripts','windows','docs']+(['tests','.github'] if args.with_tests else [])
+    extensions={'.swift','.py','.json','.sh','.cpp','.ps1','.md','.yml','.yaml'}
     for folder in folders:
         files.extend(p for p in (app/folder).rglob('*') if p.is_file() and p.suffix in extensions
                      and (args.with_tests or p.name != 'tests.cpp')
                      and not any(part in ('.build','__pycache__') for part in p.relative_to(app).parts))
-    license_file=app.parent/'LICENSE'
-    if license_file.is_file():files.append(license_file)
+    files.extend(p for p in (app/'docs/images').glob('*.png') if p.is_file())
+    license_file=next((p for p in (app/'LICENSE',app.parent/'LICENSE') if p.is_file()),None)
+    if license_file is not None:files.append(license_file)
     args.output.parent.mkdir(parents=True,exist_ok=True)
     if args.output.exists():raise SystemExit('Use a new output filename; existing archives are preserved')
     def portable_metadata(info):

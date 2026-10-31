@@ -34,8 +34,12 @@ def main():
     root = Path(__file__).resolve().parents[1]
     output = root / '.build/diagnostics' / args.name
     output.mkdir(parents=True, exist_ok=False)
-    baseline = args.baseline_file.read_text() if args.baseline_file else subprocess.check_output(
-        ['git', 'show', args.baseline_ref + ':editor/Sources/EditorCore.swift'], cwd=root.parent, text=True)
+    if args.baseline_file:
+        baseline = args.baseline_file.read_text()
+    else:
+        repo=Path(subprocess.check_output(['git','rev-parse','--show-toplevel'],cwd=root,text=True).strip())
+        source_path=(root/'Sources/EditorCore.swift').relative_to(repo).as_posix()
+        baseline = subprocess.check_output(['git','show',args.baseline_ref+':'+source_path],cwd=repo,text=True)
     current_core = (root / 'Sources/EditorCore.swift').read_text()
     # Use the exact historical replacement/apply bodies and current boundary
     # contracts. Compilation fails if those contracts no longer agree.

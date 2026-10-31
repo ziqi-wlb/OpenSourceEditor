@@ -1,39 +1,88 @@
-# Source Editor
+# OpenSourceEditor
 
-[中文](README.zh-CN.md)
+[中文](README.zh-CN.md) · [Documentation](docs/README.md) · [Release notes](RELEASE_NOTES.md)
 
-An independently implemented macOS text editor. Build and run this directory on its own: no Sublime Text installation, REA, npm, network, or investigation files are required. The native Windows implementation is in [windows](windows/README.md).
+A native desktop editor for code, everyday text and Markdown notes. The macOS application is named **Source Editor** and uses Swift/AppKit; an experimental Windows edition uses C++/Win32. Build the editor directly from this repository, without Electron, npm, a Sublime Text installation or the original investigation workspace.
 
-[Documentation](docs/README.md) · [Architecture and principles](docs/architecture.md) · [Feature matrix](docs/features.md) · [Development and contribution](docs/development.md)
+**Current macOS version: 0.9.10 · macOS 13+ · Apple Silicon and Intel Universal builds.** Windows has a smaller feature set and still needs native GUI validation.
 
-**Source Editor → About Source Editor** shows the installed version, introduction and author contact (`ziqi-wlb`, `550461053@qq.com`) with English/Chinese switching. **Release Notes…** reads the version history offline in a native window, including when all editor windows are closed. **Contact Author…** opens a draft in the system mail application; it does not send automatically. [Release notes](RELEASE_NOTES.md) share the application's authored metadata.
+![Markdown editing in Source Editor](docs/images/editor-dark.png)
 
-**View → Toggle Focus Mode** (`⌥⌘Z`) hides editor chrome and enters native full screen. Escape in source editing restores the previous layout. Sidebar, file tabs, status and line numbers also have independent View menu switches. In full screen, move to the top edge to access the automatically hidden menu bar. See [layout and persistence](docs/layout.md).
+## Get started
 
-## Build and install on macOS
+### macOS
 
-Requires macOS 13 or later and Xcode Command Line Tools (`xcode-select --install`). Python 3 is optional for extensions. From this directory:
+Install Apple's Xcode Command Line Tools if needed (`xcode-select --install`), then:
 
 ```sh
-bash scripts/install_macos.sh universal  # Build, install in ~/Applications, register and launch
-# Or build without installing:
-bash build.sh --arch universal  # Intel x86_64 + Apple Silicon arm64
+git clone https://github.com/ziqi-wlb/OpenSourceEditor.git
+cd OpenSourceEditor
+bash scripts/install_macos.sh universal
+```
+
+The script builds both architectures, installs to `~/Applications/Source Editor.app`, registers Finder **Open With** associations and launches the app. Quit any running copy with **⌘Q** before an update. The installer preserves the previous installation and leaves the default file association unchanged.
+
+To build without installing or create a ZIP:
+
+```sh
+bash build.sh --arch universal
 open '.build/Source Editor.app'
-# Alternatively: --arch arm64 or --arch x86_64
-bash package.sh universal      # ZIP containing the standalone application
+bash package.sh universal
 ```
 
-To install, unzip the package and drag **Source Editor.app** into Applications. A per-user installation needs no administrator permission:
+Use `--arch arm64` or `--arch x86_64` for a single architecture. Packaging produces `.build/SourceEditor-<version>-macos-universal.zip`; unpack it and move **Source Editor.app** to Applications. Current distribution builds are ad hoc signed for local execution, without Developer ID signing or notarization. Downloaded builds may require the normal macOS Finder **Open** approval flow.
 
-```sh
-mkdir -p "$HOME/Applications"
-cp -R '.build/Source Editor.app' "$HOME/Applications/"
-open "$HOME/Applications/Source Editor.app"
+Python 3 is optional for build commands/extensions and required for the test drivers. The editor's core text, Markdown and image features use system frameworks.
+
+### Windows (experimental)
+
+Install Visual Studio Build Tools with **Desktop development with C++** and a Windows SDK. From an **x64 Native Tools Command Prompt** at the repository root:
+
+```powershell
+powershell -ExecutionPolicy Bypass -File windows/build.ps1
 ```
 
-The application is currently unsigned and unnotarized. For a downloaded build, use Finder's **Open** action and the macOS approval dialog if needed. Packaging does not change security settings or the default editor.
+Run `windows/.build/SourceEditor.exe`. It is a portable x64 application for Windows 10/11, with no installer or file associations. See [Windows build instructions and limitations](windows/README.md), including optional cross-compilation with an already installed Zig toolchain.
 
-The installer preserves an existing Source Editor installation under ignored `.build/install-backups/` and asks you to save and quit any running copy before updating. It registers the installed application with macOS Launch Services. Markdown (`.md`, `.markdown`, `.mdown`, `.mkd`) and text files can then choose **Source Editor** in Finder's **Open With** menu. The installer does not select a default application. If an already-open Finder menu is stale, close it and reopen it; **Open With → Other…** can also select the installed application.
+## What it supports
+
+| Area | macOS | Windows experimental edition |
+| --- | --- | --- |
+| Editing | File tabs, multiple selections, undo/redo, line/comment commands, indentation and basic syntax colors | File tabs, Unicode editing, native undo and basic indentation |
+| Search | File literal/regex find and replace; background project literal search | Literal forward search and F3 |
+| Projects | Lazy folder tree, active-file reveal, create/move/rename/trash and file-event updates | Lazy folder tree and project-row context menu |
+| Layout | Independent left/right or top/bottom splits, grouped window tabs, focus mode and hideable sidebar/tabs/status/gutters | One editor area with file tabs |
+| Markdown and notes | Edit/Preview/Side by Side, one-click Outline, HTML export, note templates, task/list continuation and image attachments | Opens Markdown as text |
+| Images | Read-only raster tabs, Fit/100%/zoom, metadata and mixed image/text splits | Image preview not implemented |
+| File settings | Encoding/BOM, LF/CRLF/CR, syntax, tabs/spaces, tab width, fonts and dark/light themes | UTF-8/BOM, UTF-16 LE BOM, LF/CRLF, tabs/spaces and dark/light text |
+| Persistence | Recent folders/files, previous workspace, explicit sessions and independent draft recovery | Workspace/draft restoration not implemented |
+| Extensions | Explicit build commands and a limited one-shot Python SDK | Extension host not implemented |
+
+See the [feature matrix](docs/features.md) for detailed coverage. This is an independent implementation inspired by familiar editor interactions; it does not promise Sublime Text or VS Code plugin compatibility.
+
+### Daily workflows
+
+- **Notes:** Markdown preview uses the current unsaved buffer. **Outline** opens rendered preview directly; **Export HTML…** writes a styled page. Templates, checkboxes and list continuation support work notes.
+- **Unfinished edits:** **Keep Drafts** stores a separate backup without overwriting originals. Restart restores retained buffers; **Discard Drafts** or **Revert File…** returns to disk content. Native undo history does not survive process restart.
+- **Projects:** A folder-only window starts with a home page. Selecting a project file expands and follows its sidebar location. Click the top file title to enter a complete name or path temporarily.
+- **Windows and panes:** New macOS workspaces group into native window tabs under one Dock icon. Split panes can display different files or share one document with independent selections and scrolling.
+- **Files:** Text, file tabs and project rows have context menus, including path copying and reveal actions. Saves check for external disk changes and use atomic replacement.
+
+## Useful macOS shortcuts
+
+| Action | Shortcut |
+| --- | --- |
+| New workspace window / close file tab | ⇧⌘N / ⌘W |
+| Find / project search | ⌘F / ⇧⌘F |
+| Toggle Markdown preview / side by side | ⇧⌘V / ⌥⌘V |
+| Split editor / focus next pane / keep one pane | ⌥⌘2 / ⌥⌘3 / ⌥⌘1 |
+| Toggle sidebar / focus mode | ⌃⌘B / ⌥⌘Z |
+| Enter file name or path in the title | ⌥⌘O |
+| Toggle comment / duplicate line / delete line | ⌘/ / ⇧⌘D / ⇧⌘K |
+
+In Focus Mode, Escape in the source editor restores the previous layout. Move to the screen's top edge to access the macOS menu bar in full screen.
+
+For command-line opening:
 
 ```sh
 '.build/Source Editor.app/Contents/MacOS/source-editor' --project . README.md
@@ -41,63 +90,51 @@ The installer preserves an existing Source Editor installation under ignored `.b
 '.build/Source Editor.app/Contents/MacOS/source-editor' --version
 ```
 
-## Multiple windows on macOS
+## How it works
 
-**File → New Window** (`⌘⇧N`) creates a workspace inside the running application. New windows fold into native window tabs by default, with one Dock application icon. Each workspace keeps its own documents, project, selections and undo history. The menu bar follows the selected workspace; theme and font preferences apply across windows.
+`EditorAppDelegate` coordinates application/window lifetime; each workspace owns its documents and commands. `EditorDocument` owns text storage, encoding, disk identity, dirty state and undo. Split panes share storage while keeping separate TextKit layout managers and viewports.
 
-Use **Window → Move Window Tab to New Window** to detach a workspace, and **Window → Merge All Windows** to fold them together again. Detached windows still share the same Dock icon. **File → Close Window** (`⌘⇧W`) closes a workspace after checking unsaved files; **Close Tab** (`⌘W`) closes a file. Quit checks unsaved documents in every workspace and waits for build/plugin cancellation. Closing the last window keeps the application running; clicking its Dock icon restores the last closed workspace when Remember Previous Workspace is enabled.
+TextKit lays out text on demand. The document shares line/lexical caches across panes, and highlights are painted near the viewport. Custom edits replace the changed UTF-16 span, preserve unchanged layout and reveal the caret. Search, Markdown rendering, image decoding and draft writes use bounded background work with identity/revision checks.
 
-Finder, normal `open`, and direct CLI relaunches reuse the running application. Files already open in another workspace select that workspace. Avoid `open -n`, which requests a separate application instance. Windows from older versions or applications with a different bundle identity must be saved and quit normally before their old Dock icons disappear.
+Foundation parses Markdown into escaped HTML; the system WebKit renders preview on demand. ImageIO handles bounded raster previews. Drafts and workspace metadata are separate from source files. Python extensions run only when selected and have the current user's permissions; the host is not a sandbox.
 
-## Features and implementation
-
-Swift and AppKit provide native windows, text layout, tabs, project trees, shared-document split views, find/replace and regex search, multiple selections, undo/redo, file lifecycle and session restore. Status controls change encoding/BOM, line endings, syntax and tabs/spaces. Dark/light themes, configurable fonts, and native context menus on file tabs, text and project rows are included. Saving checks external disk changes and uses atomic replacement. Explicitly chosen build commands and a one-shot Python SDK support extensions; see [plugins](plugins.md) and [configuration examples](Resources/examples).
-
-Choose **Preferences → Editor Font** for System Monospaced, Menlo, Monaco or Courier New when installed. **View → Font** adjusts size; custom installed fonts can also be set through `font_face` in settings. Font preferences apply across workspaces and persist after restart. System fonts are used directly, without bundled font assets. The generated icon simplifies its orbit/grid at small sizes so the terminal mark remains legible.
-
-Markdown files have an **Edit / Preview / Side by Side** toolbar. Use **⇧⌘V** to toggle rendered preview and **⌥⌘V** for side-by-side. **Outline** always opens full rendered Preview in one click, including from Side by Side or during rendering; it never opens a second menu or requires Build. Preview and HTML export start with the document body, without an automatically inserted Contents section; links written in the document can still navigate to headings. For Markdown, **⌘B** and **Tools → Render Markdown** also render the current unsaved buffer without saving or running a build command. **Export HTML…** saves it as a styled page. **⇧⌘F** searches the project in a cancellable native sheet. **⌘/** toggles comments; **⇧⌘D** duplicates lines, **⇧⌘K** deletes lines, and **⌥↑ / ⌥↓** moves lines. These actions also appear in menus and the command palette.
-
-Opening or switching to a file inside the current project expands its ancestor folders, selects its sidebar row and scrolls it into view while retaining editor focus and other expanded folders. A hidden sidebar stays hidden and follows the current file when shown again. Untitled notes and files outside the project leave the project tree unchanged.
-
-**Notes** adds blank/meeting/daily/task templates, list/task/quote continuation, task toggling (`⇧⌘Return`), bold (`⇧⌘B`), italic (`⌘I`), links/code blocks and timestamps. Paste a PNG/TIFF image into a saved Markdown note to create a unique PNG in its adjacent `assets/` directory and insert a relative link. Undo removes the link; it preserves the attachment for reuse.
-
-Preferences and file/workspace metadata restore after a normal quit. Draft backup is enabled by default. Close or quit with **Keep Drafts** to restore unfinished files and untitled notes next time without changing source files; **Save All**, **Discard Drafts** and **Cancel** remain explicit choices. External file events refresh the project; clean files reload, while modified/missing files keep their buffers and show a review notice. Project row menus create, rename, move and trash files/folders. Open buffers and recent paths follow moves across windows; trashing an open file preserves its text as an untitled buffer.
-
-Single-file search runs in the background with debounce, cancellation and revision checks. Partial results are labelled, and replacement requires a complete scan. See [daily-use implementation, limits and verification](docs/daily-use-implementation.md).
-
-**File → Recovery → Enable Auto Recovery** backs up unsaved buffers every five seconds, enabled by default. Normal close with **Keep Drafts** flushes the final edit and automatically restores it next time. After restore, **File → Revert File…** reloads the original; **Find Recovery Snapshots** also offers restore, discard-and-open-originals, and later. Changed or missing originals recover as untitled buffers. Backup failures cancel closing and preserve edits. See [draft backup and restart recovery](docs/draft-recovery.md), [Markdown and search](docs/document-workspace.md) and [remaining work](docs/product-readiness.md).
-
-The release builds only `Sources/*.swift` and whitelisted Python/JSON resources. Tests, benchmarks, snapshots and test menu diagnostics compile only with `bash build.sh --tests`, into a separate **Source Editor Tests.app**, which declares no document associations. Generated icons come from the original Swift drawing source. Foundation parses Markdown and the system WebKit displays it on demand; no third-party runtime frameworks are bundled.
-
-TextKit lays out visible text on demand. Each document shares its line index and lexical matches across split panes; text edits invalidate these caches at the storage boundary. Only visible syntax matches are painted, and dirty file labels update without recreating every tab. Repeated tab selection now reuses the current editor view, and document-owned display styles avoid redundant full-buffer restyling. A matched multi-file sample reduced its maximum event-loop delay; open/close batches still have measurable stalls. See [performance measurements and remaining costs](docs/presentation-performance.md) and [historical reports](PERFORMANCE.md).
-
-The resource reports cover [optimization principles and measured effects](docs/performance-optimization.md) and [release package size and runtime memory](docs/package-and-memory.md). Both reports are included in the standalone source archives.
-
-For 0.7.0, see [Markdown, search, recovery and resource measurements](docs/document-workspace-performance.md), including WebKit helper attribution and preview timing limits.
-
-This is not a complete Sublime Text replacement. Grammar/snippet engines, full plugin compatibility, LSP, minimap, rectangular selection and project regex/replace remain incomplete. The Python SDK runs selected code with the current user's permissions; it is not a sandbox. Windows currently has a smaller feature set.
-
-For daily development and work notes, see [the detailed gap analysis and acceptance plan](docs/daily-use-gap-analysis.md).
-
-## Tests and source package
-
-```sh
-bash tests/run_all.sh                    # Headless production-boundary tests
-bash tests/run_all.sh --ui               # Adds native UI checks; requires a GUI session
-python3 scripts/export_source.py .build/SourceEditor-source.tar.gz --with-tests
-# Optional native performance workloads, in a logged-in macOS GUI session:
-python3 tests/run_performance.py local-performance
-python3 tests/measure_search.py local-search  # matched replacement vs pinned baseline
+```text
+Sources/               Native macOS editor and shared document operations
+Resources/             Release metadata, configuration examples and Python SDK
+windows/               Separate native C++/Win32 implementation
+scripts/               Icon generation, installation, packaging support and source export
+tests/                 Core, document, UI and resource checks
+docs/                  English/Chinese architecture, features and implementation guides
+.github/workflows/     macOS Universal and Windows x64 build jobs
 ```
 
-Results and screenshots stay in `.build/test-results/`. All tests use owned temporary files; native file chooser acceptance, real IME, and complete multi-screen/fullscreen behavior still need manual verification. A Windows build must also be run on Windows; cross-compilation alone does not verify its GUI.
+Read [architecture](docs/architecture.md), [draft recovery](docs/draft-recovery.md), [extensions](plugins.md) and [performance reports](PERFORMANCE.md) for design details and measured limits.
 
-Preferences → Remember Previous Workspace defaults on and restores folders as well as file tabs. Turning it off starts blank while retaining backups for manual recovery and independent recent folder history. See [workspace restoration](docs/workspace-restoration.md).
+## Development and validation
 
-New windows and folder-only projects show a native home with quick actions and recent entries. Close the last file tab to return home. Use the sidebar icons in the project header/titlebar or ⌃⌘B to expand the main area. See [workspace home](docs/workspace-home.md).
+Run checks matching the change. For typing/viewport changes:
 
-macOS 0.9.6 supports left/right and top/bottom editor splits with independent file selectors, cursors and scrolling. Use the titlebar split icon or ⌥⌘2; ⌥⌘3 focuses the other pane and ⌥⌘1 keeps the active single editor. Workspace/session restoration retains pane state. See [editor splits](docs/editor-splits.md).
+```sh
+python3 tests/run_tests.py typing-check --suite typing --ui --arch universal
+```
 
-macOS 0.9.9 reuses the top window file title for path input. Single-click it or press ⌥⌘O, enter a complete name/path and press Return/Open; Escape returns to the title. The editor has no permanent path row. Duplicate choices, open drafts and active split-pane routing remain available. See [file title and path input](docs/file-location.md).
+For documentation changes:
 
-macOS 0.9.9 opens common raster images as read-only file tabs, with Fit/100%/zoom, metadata, transparency, mixed image/text splits and image reference restoration. Finder Open With registration includes the supported image extensions. See [image preview](docs/image-preview.md) for formats, controls and resolution limits.
+```sh
+python3 tests/check_documentation.py
+python3 scripts/generate_release_notes.py --check
+```
+
+`--ui` requires a logged-in macOS desktop and temporarily activates test windows. Broader validation is available with `--suite full`; it is not required for every small edit. Release and test applications have separate identities. Artifacts, fixtures and backups stay in ignored `.build/` directories.
+
+The 0.9.10 focused run passed **167 checks** across core editing, document settings, native typing and splits. It is not a full-suite pass: a broader run retained two Markdown UI failures involving divider dragging and heading-link navigation. Intel version entry was checked under Rosetta; physical Intel GUI and Windows GUI validation remain open. See [typing stability and executed scope](docs/typing-stability.md). The workflow files configure GitHub builds; their presence does not establish a successful cloud run.
+
+LSP, richer grammar/snippet engines, rectangular selection, integrated terminal/Git tooling, project regex/replace and full extension compatibility remain future work. Markdown math/Mermaid/PDF, automatic updates, Developer ID signing/notarization, prolonged IME/accessibility and large-project acceptance also need work. See [development and contribution](docs/development.md) and [readiness plan](docs/product-readiness.md).
+
+## Contribute and contact
+
+Use [GitHub Issues](https://github.com/ziqi-wlb/OpenSourceEditor/issues) for reproducible bugs and feature requests, or open a pull request. Include the OS/architecture, app version, reproduction steps and checks actually run. Preserve unsaved content and update both language versions of changed guides.
+
+Author: [ziqi-wlb](https://github.com/ziqi-wlb) · [550461053@qq.com](mailto:550461053@qq.com). The application's **About Source Editor** and **Release Notes…** windows show the same authored information offline.
+
+A license has not yet been selected. Public source availability alone does not grant an open-source license; a license will be added after the project owner chooses it.

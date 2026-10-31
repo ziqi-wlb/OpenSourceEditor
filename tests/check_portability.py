@@ -5,13 +5,13 @@ import re
 import subprocess
 
 app=Path(__file__).resolve().parents[1]
-repo=app.parent
+repo=app
 personal_path=re.compile(r'/(?:Users|home)/[A-Za-z0-9_.-]+')
 paths=[]
 try:
-    paths=[repo/name for name in subprocess.check_output(['git','ls-files'],cwd=repo,text=True).splitlines()]
+    paths=[repo/name for name in subprocess.check_output(['git','ls-files','--cached','--others','--exclude-standard','.'],cwd=repo,text=True).splitlines()]
 except subprocess.CalledProcessError:
-    paths=[p for p in app.rglob('*') if '.build' not in p.parts and '__pycache__' not in p.parts]
+    paths=[p for p in app.rglob('*') if not any(part in ('.git','.build','__pycache__') for part in p.parts)]
 for path in paths:
     if path.is_file() and path.suffix in ('.md','.swift','.py','.json','.sh','.ps1','.cpp','.yml'):
         assert not personal_path.search(path.read_text()), 'Personal directory in '+str(path.relative_to(repo))

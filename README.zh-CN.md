@@ -1,35 +1,88 @@
-# Source Editor
+# OpenSourceEditor
 
-[English](README.md)
+[English](README.md) · [文档导航](docs/README.zh-CN.md) · [版本说明](RELEASE_NOTES.zh-CN.md)
 
-独立实现的 macOS 原生文本编辑器。此目录可以单独构建和运行，不依赖 Sublime Text、REA、npm、网络或逆向资料。Windows 原生实现见 [Windows](windows/README.zh-CN.md)。
+面向代码编辑、日常文本和 Markdown 工作笔记的原生桌面编辑器。macOS 应用名为 **Source Editor**，使用 Swift/AppKit；Windows 实验版本使用 C++/Win32。仓库可独立编译，不依赖 Electron、npm、Sublime Text 安装或原始调查工作区。
 
-[文档导航](docs/README.zh-CN.md) · [架构与原理](docs/architecture.zh-CN.md) · [功能矩阵](docs/features.zh-CN.md) · [开发与贡献](docs/development.zh-CN.md) · [版本说明](RELEASE_NOTES.zh-CN.md)
+**当前 macOS 版本：0.9.10 · macOS 13+ · 支持 Apple Silicon 与 Intel Universal 编译。** Windows 功能较少，原生 GUI 验证尚未完成。
 
-**View → Toggle Focus Mode**（`⌥⌘Z`）隐藏编辑控件并进入原生全屏，在正文编辑时按 Escape 恢复之前布局。侧栏、文件标签、状态栏和行号也可在 View 菜单中分别显示或隐藏。全屏下鼠标移到屏幕顶部可访问自动隐藏的菜单栏。见 [布局与持久化](docs/layout.zh-CN.md)。
+![Source Editor 的 Markdown 编辑界面](docs/images/editor-dark.png)
 
-## macOS 构建与安装
+## 快速开始
 
-需要 macOS 13+ 和 Xcode Command Line Tools（`xcode-select --install`）。Python 3 只用于扩展。从本目录执行：
+### macOS
+
+如尚未安装 Apple Xcode Command Line Tools，先执行 `xcode-select --install`，然后：
 
 ```sh
-bash scripts/install_macos.sh universal  # 构建、安装到用户 Applications、注册并启动
-bash build.sh --arch universal          # 仅构建 Intel/ARM Universal
+git clone https://github.com/ziqi-wlb/OpenSourceEditor.git
+cd OpenSourceEditor
+bash scripts/install_macos.sh universal
+```
+
+脚本编译两个架构，安装到 `~/Applications/Source Editor.app`，注册 Finder“打开方式”并启动。更新前请用 **⌘Q** 正常退出已有副本。安装器备份旧版，不修改默认文件关联。
+
+仅编译或生成 ZIP：
+
+```sh
+bash build.sh --arch universal
 open '.build/Source Editor.app'
-bash package.sh universal               # 独立应用 ZIP
+bash package.sh universal
 ```
 
-也可使用 `--arch arm64` 或 `--arch x86_64`。解压 ZIP 后将 Source Editor.app 拖入 Applications；当前用户安装不需要管理员权限：
+单架构可使用 `--arch arm64` 或 `--arch x86_64`。打包输出为 `.build/SourceEditor-<版本>-macos-universal.zip`，解压后将 **Source Editor.app** 移入 Applications。当前构建使用本地运行所需的 ad hoc 签名，没有 Developer ID 签名或公证；下载版本可能需要通过 macOS Finder“打开”的正常确认流程。
 
-```sh
-mkdir -p "$HOME/Applications"
-cp -R '.build/Source Editor.app' "$HOME/Applications/"
-open "$HOME/Applications/Source Editor.app"
+Python 3 仅在选用相关构建命令/扩展及运行测试驱动时需要。核心文本、Markdown 和图片功能使用系统框架。
+
+### Windows（实验版本）
+
+安装 Visual Studio Build Tools 的“使用 C++ 的桌面开发”与 Windows SDK。在 **x64 Native Tools Command Prompt** 中进入仓库根目录：
+
+```powershell
+powershell -ExecutionPolicy Bypass -File windows/build.ps1
 ```
 
-当前应用未签名、未公证。下载版本可使用 Finder“打开”和系统确认；打包不会改变安全设置或默认编辑器。更新前请保存并用 ⌘Q 退出所有运行副本，关闭窗口并不等于退出应用。安装器拒绝覆盖运行中的应用，并将旧版保存在 `.build/install-backups/`。
+运行 `windows/.build/SourceEditor.exe`。目标为 Windows 10/11 的便携 x64 程序，当前没有安装器或文件关联。另见 [Windows 编译说明和限制](windows/README.zh-CN.md)，包含使用已安装 Zig 工具链交叉编译的方法。
 
-安装器注册 Launch Services，为 `.md`、`.markdown`、`.mdown`、`.mkd` 和文本提供 Finder“打开方式”。已有菜单可能需要关闭重开；也可通过“打开方式 → 其他”选择安装的应用。它不会替换系统默认编辑器。
+## 支持的功能
+
+| 领域 | macOS | Windows 实验版本 |
+| --- | --- | --- |
+| 编辑 | 文件标签、多选、撤销重做、行/注释操作、缩进和基础语法配色 | 文件标签、Unicode 编辑、原生撤销和基础缩进 |
+| 搜索 | 文件内字面/正则查找替换，后台项目字面搜索 | 字面前向搜索与 F3 |
+| 项目 | 懒加载目录、跟随当前文件、创建/移动/重命名/废纸篓与文件事件刷新 | 懒加载目录与项目行右键菜单 |
+| 布局 | 左右/上下独立切分、窗口分组、专注模式与侧栏/标签/状态/行号隐藏 | 单编辑区域与文件标签 |
+| Markdown 与笔记 | Edit/Preview/Side by Side、一键 Outline、HTML 导出、模板、任务/列表续行和图片附件 | 以文本方式打开 Markdown |
+| 图片 | 栅格图片只读标签、Fit/100%/缩放、元信息及图片/文本混合切分 | 未实现图片预览 |
+| 文件设置 | 编码/BOM、LF/CRLF/CR、语法、Tab/空格及宽度、字体和深浅主题 | UTF-8/BOM、UTF-16 LE BOM、LF/CRLF、Tab/空格及深浅正文 |
+| 持久化 | 最近文件/文件夹、上次工作区、显式会话和独立草稿恢复 | 未实现工作区/草稿恢复 |
+| 扩展 | 明确选择的构建命令与有限的一次性 Python SDK | 未实现扩展宿主 |
+
+完整覆盖范围见 [功能矩阵](docs/features.zh-CN.md)。项目独立实现常见编辑器交互，不承诺与 Sublime Text 或 VS Code 的插件兼容。
+
+### 日常使用
+
+- **笔记：** Markdown 渲染当前未保存内容；**Outline** 直接打开预览，**Export HTML…** 导出带样式页面。模板、任务勾选和列表续行用于工作记录。
+- **未完成编辑：** **Keep Drafts** 单独备份，不覆盖原文件；重启恢复保留的缓冲区，**Discard Drafts** 或 **Revert File…** 返回磁盘内容。原生撤销历史不跨进程保存。
+- **项目：** 仅打开文件夹时展示主页；选中文件自动展开并定位左侧目录。单击顶部文件标题，临时输入完整名称或路径。
+- **窗口与切分：** macOS 工作区默认合并为原生窗口标签，共用一个 Dock 图标；切分区域可以打开不同文件，或共享同一文档并保留独立选区和滚动。
+- **文件：** 正文、文件标签和项目行提供右键菜单，包含路径复制与定位。保存前检查磁盘外部变化，并原子替换。
+
+## macOS 常用快捷键
+
+| 操作 | 快捷键 |
+| --- | --- |
+| 新建工作区窗口 / 关闭文件标签 | ⇧⌘N / ⌘W |
+| 文件查找 / 项目搜索 | ⌘F / ⇧⌘F |
+| 切换 Markdown 预览 / 并排预览 | ⇧⌘V / ⌥⌘V |
+| 切分 / 切换区域 / 保留单区域 | ⌥⌘2 / ⌥⌘3 / ⌥⌘1 |
+| 显示或隐藏侧栏 / 专注模式 | ⌃⌘B / ⌥⌘Z |
+| 在标题处输入文件名或路径 | ⌥⌘O |
+| 切换注释 / 复制行 / 删除行 | ⌘/ / ⇧⌘D / ⇧⌘K |
+
+专注模式下，在正文编辑处按 Escape 恢复布局。全屏时将鼠标移到屏幕顶部可访问 macOS 菜单栏。
+
+命令行打开：
 
 ```sh
 '.build/Source Editor.app/Contents/MacOS/source-editor' --project . README.md
@@ -37,53 +90,51 @@ open "$HOME/Applications/Source Editor.app"
 '.build/Source Editor.app/Contents/MacOS/source-editor' --version
 ```
 
-## 多窗口
+## 实现原理
 
-File → New Window（⌘⇧N）在同一应用中创建工作区，默认合并为原生窗口标签，Dock 只有一个应用图标。每个工作区独立拥有文档、项目、选区和撤销；菜单跟随当前工作区，字体与主题全局共享。
+`EditorAppDelegate` 协调应用和窗口生命周期，每个工作区拥有自己的文档与命令。`EditorDocument` 拥有文本存储、编码、磁盘身份、脏状态和撤销。切分区域共享存储，各自拥有 TextKit 排版管理器和视口。
 
-Window → Move Window Tab to New Window 拆分；Merge All Windows 合并。⌘⇧W 关闭工作区，⌘W 关闭文件页。退出检查所有窗口的未保存内容并等待构建/扩展取消。关闭最后窗口后应用仍运行，开启 Remember Previous Workspace 时，点击 Dock 恢复最后关闭的工作区。
+TextKit 按需排版；文档统一缓存行索引和词法结果，视口附近应用高亮。自定义编辑仅替换变化的 UTF-16 片段，保留其他排版并确保光标可见。搜索、Markdown 渲染、图片解码和草稿写入采用有界后台工作，并检查身份/版本以拒绝过期结果。
 
-Finder、普通 `open` 和直接 CLI 重启会复用当前应用，已打开文件会定位所属工作区。`open -n` 请求另一个实例。旧版本或不同 bundle identity 的窗口要先正常保存退出，旧图标才消失。
+Foundation 将 Markdown 解析为转义后的 HTML，系统 WebKit 按需显示预览；ImageIO 提供有界栅格图片预览。草稿和工作区元数据与原文件分开。Python 扩展由用户主动选择执行，拥有当前用户权限，宿主并非沙箱。
 
-## 功能与实现
-
-Swift/AppKit 提供原生窗口、文本布局、标签、项目树、共享文档拆分、多选、撤销重做、字面/正则查找替换、文件生命周期及会话恢复。状态栏可选择编码/BOM、换行、语法、Tab/空格；支持暗色/浅色、字体和文件页/正文/项目行右键菜单。保存复核磁盘冲突并原子替换。构建命令和一次性 Python SDK 需明确选择；见 [扩展](plugins.zh-CN.md) 和 [配置例子](Resources/examples)。
-
-Preferences → Editor Font 可选择系统等宽、Menlo、Monaco、Courier New 等已安装字体。View → Font 调整字号；配置 `font_face` 可指定其他已安装字体。偏好跨窗口共享并在重启后保留，不捆绑字体。原创图标在小尺寸简化网格/轨道，提高终端符号识别度。
-
-Markdown 文件使用 Edit / Preview / Side by Side，⇧⌘V 切换预览，⌥⌘V 并排。Outline 在所有模式下一键显示完整预览，无二次菜单或 Build 步骤。预览与 HTML 导出直接显示正文，不插入 Contents；文档自身的锚点链接仍可导航。Markdown 的 ⌘B 和 Tools → Render Markdown 只渲染当前未保存内容，不执行命令或保存源文件。Export HTML… 导出含样式的页面。
-
-打开/切换项目内文件时，自动展开祖先目录、选中并滚动定位，保持编辑焦点及其他目录展开状态。隐藏的侧栏保持隐藏，重新显示时跟随当前文件。未命名或项目外文件保留原项目。⇧⌘F 后台项目搜索；⌘/ 注释；⇧⌘D 复制行；⇧⌘K 删除行；⌥↑/⌥↓ 移动行。菜单和命令面板也提供入口。
-
-## 作者与版本说明
-
-Source Editor → About Source Editor 显示项目介绍、已安装版本、作者 `ziqi-wlb` 和邮箱 `550461053@qq.com`。介绍窗口支持 English/中文切换。Release Notes… 在原生窗口中离线显示版本历史，关闭所有编辑窗口后仍可访问。Contact Author… 或窗口中的联系按钮在系统邮件应用打开草稿，不会自动发送。
-
-[中英文版本说明](RELEASE_NOTES.md) 由 `Resources/project-information.json` 生成，与应用共享同一信息来源。
-
-## 草稿恢复
-
-0.9.0+ 默认每 5 秒独立备份未保存文本。关闭窗口/退出时 Keep Drafts 补写最终状态，下次恢复文件和未命名笔记，不覆盖原件。Discard Drafts 和 File → Revert File… 明确恢复磁盘内容。写入失败或容量限制有可见通知；取消保留编辑能力。见 [草稿机制与验证](docs/draft-recovery.zh-CN.md)。原生撤销历史不跨进程保存。
-
-## 验证、源码与限制
-
-```sh
-python3 tests/run_tests.py local-ui --ui --arch universal
-python3 tests/check_portability.py
-python3 tests/check_documentation.py
-python3 scripts/export_source.py .build/SourceEditor-source.tar.gz --with-tests
+```text
+Sources/               macOS 原生编辑器与文档操作
+Resources/             版本信息、配置例子和 Python SDK
+windows/               独立 C++/Win32 实现
+scripts/               图标生成、安装、打包辅助和源码导出
+tests/                 核心、文档、UI 和资源检查
+docs/                  中英文架构、功能及实现指南
+.github/workflows/     macOS Universal 与 Windows x64 构建任务
 ```
 
-发布应用只包含生产 Swift 和支持资源，不包含测试、截图、日志、个人路径或调查目录。源码包包含中英文说明、构建脚本和可选测试。性能及资源见 [性能导航](PERFORMANCE.zh-CN.md)，开发方式见 [开发指南](docs/development.zh-CN.md)。
+详细说明见 [架构](docs/architecture.zh-CN.md)、[草稿恢复](docs/draft-recovery.zh-CN.md)、[扩展](plugins.zh-CN.md) 和 [性能文档](PERFORMANCE.zh-CN.md)。
 
-基础词法规则并非完整 Sublime/TextMate 语法。LSP、完整片段、矩形选择、终端、Git 差异、公式/Mermaid/PDF、自动更新及签名公证尚不完整。原生 IME、VoiceOver、长期使用、多屏、物理 Intel 和 Windows GUI 仍需专项验收。Windows 功能较少；macOS 通过测试不代表 Windows 完成。参见 [功能与限制](docs/features.zh-CN.md)、[产品就绪](docs/product-readiness.zh-CN.md)。项目所有者尚未选择开源许可证。
+## 开发与验证
 
-Preferences → Remember Previous Workspace 默认开启，同时恢复文件夹与文件标签。关闭后重开进入空白窗口，保留可手动恢复的草稿与独立的最近文件夹历史。参见[工作区恢复](docs/workspace-restoration.zh-CN.md)。
+日常改动按影响范围执行检查。例如输入/滚动修改：
 
-新窗口和纯文件夹项目显示带快捷操作与最近记录的原生主页，关闭最后一个文件标签后回到主页。通过项目标题/窗口标题栏的侧栏图标或 ⌃⌘B 扩大主区域。参见[工作区主页](docs/workspace-home.zh-CN.md)。
+```sh
+python3 tests/run_tests.py typing-check --suite typing --ui --arch universal
+```
 
-macOS 0.9.6 支持左右/上下编辑区切分，各区域独立选择文件并保留光标、滚动位置。通过标题栏图标或 ⌥⌘2 切分、⌥⌘3 切换区域、⌥⌘1 保留活动区域并合并；工作区/会话恢复保留区域状态。参见[编辑区切分](docs/editor-splits.zh-CN.md)。
+文档修改：
 
-macOS 0.9.9 复用窗口顶部文件标题作为路径输入。单击或按 ⌥⌘O，输入完整名称/路径后回车/Open 打开，Escape 恢复标题。编辑区不再保留常驻路径行，保留重名选择、已打开草稿和活动切分区域路由。参见[文件标题与路径输入](docs/file-location.zh-CN.md)。
+```sh
+python3 tests/check_documentation.py
+python3 scripts/generate_release_notes.py --check
+```
 
-macOS 0.9.9 支持常见栅格图片的只读文件标签，提供 Fit/100%/缩放、元信息、透明背景、图片/文本混合切分与图片引用恢复。Finder 打开方式也注册支持的图片扩展名。格式、操作和分辨率限制见[图片预览](docs/image-preview.zh-CN.md)。
+`--ui` 需要已登录的 macOS 桌面，会临时激活测试窗口。跨模块或发布时可用 `--suite full`，无需每次小改动重复全套。发布版与测试版拥有独立应用身份，产物、样本和备份保存在忽略的 `.build/` 下。
+
+0.9.10 的核心编辑、文档设置、原生输入和切分专项共 **167 项通过**。这不代表全套通过：一次更广泛运行保留了分割条拖动和渲染标题链接导航两项 Markdown UI 失败。Intel 版本入口在 Rosetta 验证，实体 Intel 和 Windows GUI 尚待验证。详情见 [输入稳定性与执行范围](docs/typing-stability.zh-CN.md)。GitHub 工作流配置不等于云端已经成功运行。
+
+LSP、更完整语法/片段引擎、矩形选择、集成终端/Git、项目正则/替换和完整扩展兼容仍是后续工作。Markdown 公式/Mermaid/PDF、自动更新、Developer ID 签名/公证、长期 IME/无障碍及大项目验收也需完善。见 [开发与贡献](docs/development.zh-CN.md) 和 [产品就绪计划](docs/product-readiness.zh-CN.md)。
+
+## 贡献与联系
+
+通过 [GitHub Issues](https://github.com/ziqi-wlb/OpenSourceEditor/issues) 提交可复现问题或功能建议，也欢迎 pull request。请说明系统/架构、应用版本、复现步骤和实际执行的检查；保护未保存内容，同步修改相关中英文文档。
+
+作者：[ziqi-wlb](https://github.com/ziqi-wlb) · [550461053@qq.com](mailto:550461053@qq.com)。应用的 **About Source Editor** 与 **Release Notes…** 窗口离线显示同一来源的信息。
+
+尚未选定许可证。公开源码本身不等于授予开源许可，项目所有者选择后再添加许可证。

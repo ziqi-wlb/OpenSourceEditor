@@ -1,2 +1,11 @@
 .build/
 *.dSYM/
+.DS_Store
+.codebase-memory/
+__pycache__/
+*.pyc
+*.icns
+*.iconset/
+*.exe
+*.obj
+*.pdb

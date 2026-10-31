@@ -1,0 +1,53 @@
+name: Build and test
+
+on: [push, pull_request, workflow_dispatch]
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  macos:
+    runs-on: macos-14
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - name: Headless checks and Universal build
+        run: bash tests/run_all.sh ci --arch universal
+      - name: Package macOS application
+        run: ditto -c -k --sequesterRsrc --keepParent '.build/Source Editor.app' .build/SourceEditor-macos-universal.zip
+      - uses: actions/upload-artifact@v4
+        with:
+          name: SourceEditor-macos-universal
+          path: .build/SourceEditor-macos-universal.zip
+          if-no-files-found: error
+  windows:
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - uses: ilammy/msvc-dev-cmd@v1
+        with:
+          arch: x64
+      - name: Build native Windows editor
+        shell: pwsh
+        run: ./windows/build.ps1
+      - name: Check Windows Unicode codecs
+        shell: pwsh
+        run: |
+          ./windows/build.ps1 -Tests
+          $process = Start-Process -FilePath ./windows/.build/SourceEditorTests.exe -ArgumentList '--self-test' -Wait -PassThru
+          if ($process.ExitCode -ne 0) { throw 'Windows codec checks failed' }
+      - uses: actions/upload-artifact@v4
+        with:
+          name: SourceEditor-windows-x64
+          path: windows/.build/SourceEditor.exe
+          if-no-files-found: error

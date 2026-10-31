@@ -9,15 +9,15 @@ Uses C++17, Win32 and the system RichEdit control. The produced x64 EXE requires
 Install Visual Studio Build Tools with **Desktop development with C++**, including a Windows SDK. Open **x64 Native Tools Command Prompt for Visual Studio**, enter the repository directory, then:
 
 ```powershell
-powershell -ExecutionPolicy Bypass -File editor/windows/build.ps1
+powershell -ExecutionPolicy Bypass -File windows/build.ps1
 ```
 
-The result is `editor/windows/.build/SourceEditor.exe`. Copy it into any directory and run it. This is a portable program, without registry registration, an installer, file associations or a background service. Windows may ask for normal confirmation because the EXE is unsigned.
+The result is `windows/.build/SourceEditor.exe`. Copy it into any directory and run it. This is a portable program, without registry registration, an installer, file associations or a background service. Windows may ask for normal confirmation because the EXE is unsigned.
 
 For cross-compilation with an explicitly installed Zig 0.13.0:
 
 ```sh
-ZIG_BIN=/path/to/zig bash editor/windows/build.sh
+ZIG_BIN=/path/to/zig bash windows/build.sh
 ```
 
 The script does not download a compiler. GitHub Actions also has a Windows/MSVC build job. A PE binary and correct imports establish a build result; actual Windows execution and GUI checks are separate.

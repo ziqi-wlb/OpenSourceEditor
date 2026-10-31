@@ -13,7 +13,9 @@ def main():
     parser.add_argument('name')
     parser.add_argument('--arch',default='universal',choices=['arm64','x86_64','universal'])
     args=parser.parse_args()
-    app=Path(__file__).resolve().parents[1];repo=app.parent
+    app=Path(__file__).resolve().parents[1]
+    repo=Path(subprocess.check_output(['git','rev-parse','--show-toplevel'],cwd=app,text=True).strip())
+    prefix=app.relative_to(repo)
     result_dir=app/'.build/test-results'/args.name
     result=json.loads((result_dir/'results.json').read_text())
     assert result['status']=='passed'
@@ -22,9 +24,11 @@ def main():
     tree=subprocess.check_output(['git','write-tree'],cwd=repo,text=True).strip()
     folder=Path(tempfile.mkdtemp(prefix='source-editor-'))
     archive=folder/'editor.tar'
-    subprocess.run(['git','archive','--format=tar','--output='+str(archive),tree,'editor'],cwd=repo,check=True)
+    command=['git','archive','--format=tar','--output='+str(archive),tree]
+    if prefix != Path('.'):command.append(prefix.as_posix())
+    subprocess.run(command,cwd=repo,check=True)
     subprocess.run(['tar','-xf',str(archive),'-C',str(folder)],check=True)
-    fresh=folder/'editor'
+    fresh=folder/prefix
     assert not (fresh/'.build').exists() and not (folder/'sublime_text').exists()
     for item in result['sources']:
         assert sha(app/item['path'])==item['sha256'] and sha(fresh/item['path'])==item['sha256'],item['path']

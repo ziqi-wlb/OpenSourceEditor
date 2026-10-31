@@ -9,15 +9,15 @@
 安装 Visual Studio Build Tools 的“使用 C++ 的桌面开发”及 Windows SDK。在 x64 Native Tools Command Prompt 中进入仓库：
 
 ```powershell
-powershell -ExecutionPolicy Bypass -File editor/windows/build.ps1
+powershell -ExecutionPolicy Bypass -File windows/build.ps1
 ```
 
-生成 `editor/windows/.build/SourceEditor.exe`，复制到任意目录运行。当前为便携程序，无注册表安装器、文件关联或后台服务。EXE 未签名，系统可能要求正常确认。
+生成 `windows/.build/SourceEditor.exe`，复制到任意目录运行。当前为便携程序，无注册表安装器、文件关联或后台服务。EXE 未签名，系统可能要求正常确认。
 
 已安装 Zig 0.13.0 时可交叉编译：
 
 ```sh
-ZIG_BIN=/path/to/zig bash editor/windows/build.sh
+ZIG_BIN=/path/to/zig bash windows/build.sh
 ```
 
 脚本不会下载编译器。GitHub Actions 配置了 Windows/MSVC 构建；PE 文件和导入正确只证明编译，实际 Windows GUI 验收另行记录。

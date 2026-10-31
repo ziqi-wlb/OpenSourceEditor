@@ -2,13 +2,13 @@
 
 [中文](development.zh-CN.md)
 
-The application builds independently from `editor/`. Installation and execution do not require investigation data, personal machine paths or another tool workspace.
+The application builds independently from the repository root. Installation and execution do not require investigation data, personal machine paths or another tool workspace.
 
 ## macOS
 
 Requires macOS 13+ and Xcode Command Line Tools. Developers install missing tools with `xcode-select --install`; scripts do not install or upgrade toolchains. Python 3 is needed only for extensions and some tests/reports.
 
-Run from `editor/`:
+Run from the repository root:
 
 ```sh
 bash build.sh --arch universal
@@ -34,7 +34,7 @@ Routine local installation and normal restart are part of the development workfl
 
 ## Windows
 
-For Windows 10/11 x64, install Visual Studio Build Tools with Desktop development with C++ and the Windows SDK. From `editor/` in an x64 developer terminal:
+For Windows 10/11 x64, install Visual Studio Build Tools with Desktop development with C++ and the Windows SDK. From the repository root in an x64 developer terminal:
 
 ```powershell
 powershell -ExecutionPolicy Bypass -File windows/build.ps1
@@ -65,7 +65,7 @@ Performance validation uses [existing workloads](../PERFORMANCE.md) and records 
 python3 scripts/export_source.py .build/SourceEditor-source.tar.gz --with-tests
 ```
 
-Exports include production source, resources, build scripts, tests and bilingual documentation, excluding `.build`, personal paths, proprietary editor binaries, investigation output and Python caches. See [documentation](README.md). The full repository has top-level `CONTRIBUTING.md`; standalone maintenance follows these rules:
+Exports include production source, resources, build scripts, tests and bilingual documentation, excluding `.build`, personal paths, proprietary editor binaries, investigation output and Python caches. See [documentation](README.md). See [contribution guidelines](../CONTRIBUTING.md). Standalone maintenance follows these rules:
 
 1. Documents own text, disk identity and settings. UI consumes these facts rather than reinterpreting encoding or dirty state.
 2. Preserve Unicode boundaries, disk conflicts, undo transactions and selections. Validate background document identities/revisions.
@@ -76,6 +76,8 @@ Exports include production source, resources, build scripts, tests and bilingual
 `Resources/project-information.json` owns author contact and bilingual release history. Run `python3 scripts/generate_release_notes.py` after changing it; `--check` verifies both generated documents. Keep release metadata aligned with `Info.plist`. Application introductions/releases are read offline; contact drafts require an explicit user action.
 
 GitHub Actions is configured for Universal macOS and Windows MSVC builds/encoding checks. Local success does not establish cloud execution. No LICENSE has been selected; the maintainer must select and include one before claiming formal open-source licensing.
+
+The independent GitHub checkout uses this directory as its root. Historical reports may cite commits from the earlier parent repository; subtree extraction changes commit IDs. For the optional historical search benchmark, pass an applicable `--baseline-ref` or supply `--baseline-file` explicitly. The application and ordinary checks do not need that historical baseline.
 
 Preferences → Remember Previous Workspace defaults on and restores folders as well as file tabs. Turning it off starts blank while retaining backups for manual recovery and independent recent folder history. See [workspace restoration](workspace-restoration.md).
 
