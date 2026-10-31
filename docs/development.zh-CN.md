@@ -8,7 +8,7 @@
 
 要求 macOS 13+ 和 Xcode Command Line Tools。在系统工具缺失时由开发者运行 `xcode-select --install`；构建脚本不会安装或升级工具链。Python 3 只用于扩展与部分测试/报告。
 
-从仓库根目录执行：
+父仓库检出后先执行 `cd editor`；独立 OpenSourceEditor 仓库或导出的源码包直接从其根目录开始。下列命令均在应用目录执行：
 
 ```sh
 bash build.sh --arch universal  # 同时编译 Intel x86_64 与 ARM64
@@ -37,7 +37,7 @@ bash package.sh universal
 Windows 10/11 x64：安装 Visual Studio Build Tools 的 Desktop development with C++ 和 Windows SDK，在 x64 开发者终端执行：
 
 ```powershell
-# 从仓库根目录执行：
+# 从应用目录执行：
 powershell -ExecutionPolicy Bypass -File windows/build.ps1
 ```
 
@@ -46,7 +46,7 @@ powershell -ExecutionPolicy Bypass -File windows/build.ps1
 ## 测试
 
 ```sh
-# 从仓库根目录执行：
+# 从应用目录执行：
 bash tests/run_all.sh local-check --arch universal
 bash tests/run_all.sh local-ui --ui --arch universal
 python3 tests/recovery_restart_test.py '.build/Source Editor Tests.app/Contents/MacOS/source-editor'
@@ -78,6 +78,8 @@ python3 scripts/export_source.py .build/SourceEditor-source.tar.gz --with-tests
 5. 更新功能矩阵、架构和相关使用文档；只报告执行过的检查。使用 Conventional Commit，不提交缓存、用户文件和机器特定路径。
 
 GitHub Actions 已配置 macOS Universal 和 Windows MSVC 构建/编码检查；本地运行不等于云端 CI 已执行。仓库尚未选择 LICENSE，当前不能声称已经完成正式开源授权；维护者应确定许可证后将 LICENSE 纳入发行源码。
+
+父仓库及独立工作流在验证成功或失败后都会保留 macOS 日志/结果和 Windows 编译日志，并设置有限的平台任务时限。Windows 编译输出同时保存在 `windows/.build/*-build.log`；包含 SDK 头文件时使用 `NOMINMAX` 保护标准库调用。云端检查没有桌面界面，原生 UI 验收需要登录中的图形会话。当前版本证据、剩余验收和实施顺序见[当前差距与优先级](current-gap-analysis.zh-CN.md)。
 
 独立 GitHub 仓库以此目录为根目录。历史性能报告可能引用原父仓库提交；子树提取后提交 ID 会变化。选用历史搜索基准时，请明确传入适用的 `--baseline-ref` 或 `--baseline-file`。应用和日常检查不依赖这些历史基线。
 

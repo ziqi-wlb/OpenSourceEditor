@@ -4,6 +4,7 @@
 
 | 内容 | 文档 |
 | --- | --- |
+| 当前问题、证据与完善优先级 | [当前差距分析](current-gap-analysis.zh-CN.md) |
 | 回车、滚动与文字颜色 | [编辑稳定性](typing-stability.zh-CN.md) |
 | 构建、安装与使用入口 | [应用 README](../README.zh-CN.md) |
 | 架构、模块与实现原理 | [Architecture](architecture.zh-CN.md) |

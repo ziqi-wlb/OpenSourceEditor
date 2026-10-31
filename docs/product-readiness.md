@@ -4,7 +4,7 @@
 
 Source Editor is an independent editor. Familiar workflows from Sublime Text and VS Code guide interaction design; their code and assets are not part of the application. macOS and Windows have separate native implementations and separate validation status.
 
-For concrete daily development and note-taking gaps, implementation priorities and scenario acceptance, see [the daily-use analysis](daily-use-gap-analysis.md).
+For current development and note-taking gaps, evidence and acceptance priorities, see [the current analysis](current-gap-analysis.md). The [daily-use analysis](daily-use-gap-analysis.md) retains the historical 0.7.0 baseline.
 
 ## Acceptance criteria
 
@@ -21,7 +21,13 @@ A stable release requires recoverable file operations, Unicode/IME correctness, 
 | Windows | Smaller experimental Win32 implementation | Native platform UI/performance tests and feature parity |
 | Accessibility | Native controls, named preview/search controls | VoiceOver, keyboard-only and high-contrast manual acceptance |
 
-## Current implementation stage
+## Current 0.9.10 status
+
+macOS 0.9.10 build 23 has focused acceptance of 167 checks. The 2026-10-31 product UI recheck against identical accepted binaries passed 77 checks and failed divider dragging and rendered heading-fragment navigation. These remain open until their product/fixture causes are diagnosed and the full UI gate completes. Headless checks and earlier release passes do not clear this gap.
+
+Workspace restoration, home, independent editor splits, file-title input, images and list viewport stability are implemented. Actual IME, native chooser success, prolonged/interruption recovery, accessibility and physical platform acceptance remain separate work. See [current gaps](current-gap-analysis.md) for the ordered plan.
+
+## Historical implementation stages
 
 macOS 0.9.3 adds bilingual guides, author contact and a native offline release window. Workspace controls hide tabs/status/gutters independently; Focus Mode uses native full screen and restores the previous layout. The matching `bilingual-focus-093-verified` gate passed 646 checks with 13 explicit skips, including long release-text reflow in a narrower native window. Prolonged/manual readiness work remains separate.
 

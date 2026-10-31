@@ -2,7 +2,7 @@
 
 [中文](features.zh-CN.md)
 
-This matrix describes current source capabilities. macOS 0.9.9 uses Swift/AppKit; Windows x64 is a separate experimental implementation. They do not fully share UI, editing core or extension host. macOS tests do not establish Windows stability or features.
+This matrix describes current source capabilities. macOS 0.9.10 uses Swift/AppKit; Windows x64 is a separate experimental implementation. They do not fully share UI, editing core or extension host. macOS tests do not establish Windows stability or features.
 
 | Everyday capability | macOS | Windows |
 | --- | --- | --- |

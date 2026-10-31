@@ -1,3 +1,6 @@
+#ifndef NOMINMAX
+#define NOMINMAX
+#endif
 #define UNICODE
 #define _UNICODE
 #include <windows.h>

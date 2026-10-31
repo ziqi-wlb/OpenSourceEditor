@@ -12,6 +12,7 @@ concurrency:
 jobs:
   macos:
     runs-on: macos-14
+    timeout-minutes: 30
     steps:
       - uses: actions/checkout@v4
         with:
@@ -21,6 +22,14 @@ jobs:
           python-version: '3.12'
       - name: Headless checks and Universal build
         run: bash tests/run_all.sh ci --arch universal
+      - name: Retain macOS validation evidence
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: SourceEditor-macos-test-results
+          path: .build/test-results/ci/
+          if-no-files-found: warn
+          retention-days: 14
       - name: Package macOS application
         run: ditto -c -k --sequesterRsrc --keepParent '.build/Source Editor.app' .build/SourceEditor-macos-universal.zip
       - uses: actions/upload-artifact@v4
@@ -30,6 +39,7 @@ jobs:
           if-no-files-found: error
   windows:
     runs-on: windows-latest
+    timeout-minutes: 15
     steps:
       - uses: actions/checkout@v4
         with:
@@ -46,6 +56,14 @@ jobs:
           ./windows/build.ps1 -Tests
           $process = Start-Process -FilePath ./windows/.build/SourceEditorTests.exe -ArgumentList '--self-test' -Wait -PassThru
           if ($process.ExitCode -ne 0) { throw 'Windows codec checks failed' }
+      - name: Retain Windows build evidence
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: SourceEditor-windows-build-logs
+          path: windows/.build/*-build.log
+          if-no-files-found: warn
+          retention-days: 14
       - uses: actions/upload-artifact@v4
         with:
           name: SourceEditor-windows-x64

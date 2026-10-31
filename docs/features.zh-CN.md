@@ -2,7 +2,7 @@
 
 [English](features.md)
 
-此矩阵描述当前源码提供的能力。macOS 0.9.9 使用 Swift / AppKit；Windows x64 是独立的实验实现。两平台没有完全共享 UI、编辑核心或扩展宿主，不能从 macOS 测试推导 Windows 的功能与稳定性。
+此矩阵描述当前源码提供的能力。macOS 0.9.10 使用 Swift / AppKit；Windows x64 是独立的实验实现。两平台没有完全共享 UI、编辑核心或扩展宿主，不能从 macOS 测试推导 Windows 的功能与稳定性。
 
 | 日常能力 | macOS | Windows |
 | --- | --- | --- |

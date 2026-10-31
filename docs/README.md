@@ -4,6 +4,7 @@
 
 | Topic | Guide |
 | --- | --- |
+| Current gaps and prioritized improvements | [Current gap analysis](current-gap-analysis.md) |
 | Return, scrolling and text colors | [Editing stability](typing-stability.md) |
 | Build, install and use | [Application README](../README.md) |
 | Architecture and implementation | [Architecture](architecture.md) |

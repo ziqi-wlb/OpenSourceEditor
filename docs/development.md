@@ -8,7 +8,7 @@ The application builds independently from the repository root. Installation and 
 
 Requires macOS 13+ and Xcode Command Line Tools. Developers install missing tools with `xcode-select --install`; scripts do not install or upgrade toolchains. Python 3 is needed only for extensions and some tests/reports.
 
-Run from the repository root:
+In the parent checkout, first run `cd editor`. In the standalone OpenSourceEditor checkout or exported source archive, start at its root. The commands below run from the application directory:
 
 ```sh
 bash build.sh --arch universal
@@ -34,7 +34,7 @@ Routine local installation and normal restart are part of the development workfl
 
 ## Windows
 
-For Windows 10/11 x64, install Visual Studio Build Tools with Desktop development with C++ and the Windows SDK. From the repository root in an x64 developer terminal:
+For Windows 10/11 x64, install Visual Studio Build Tools with Desktop development with C++ and the Windows SDK. From the application directory in an x64 developer terminal:
 
 ```powershell
 powershell -ExecutionPolicy Bypass -File windows/build.ps1
@@ -76,6 +76,8 @@ Exports include production source, resources, build scripts, tests and bilingual
 `Resources/project-information.json` owns author contact and bilingual release history. Run `python3 scripts/generate_release_notes.py` after changing it; `--check` verifies both generated documents. Keep release metadata aligned with `Info.plist`. Application introductions/releases are read offline; contact drafts require an explicit user action.
 
 GitHub Actions is configured for Universal macOS and Windows MSVC builds/encoding checks. Local success does not establish cloud execution. No LICENSE has been selected; the maintainer must select and include one before claiming formal open-source licensing.
+
+The parent and standalone workflows retain macOS validation logs/results and Windows compiler logs on both success and failure and set finite platform job deadlines. Windows compiler output also stays in `windows/.build/*-build.log`; SDK headers are included with `NOMINMAX` to preserve standard-library calls. Cloud checks are headless; native UI acceptance needs a logged-in desktop. See [current gaps and priorities](current-gap-analysis.md) for current-version evidence, remaining acceptance and implementation order.
 
 The independent GitHub checkout uses this directory as its root. Historical reports may cite commits from the earlier parent repository; subtree extraction changes commit IDs. For the optional historical search benchmark, pass an applicable `--baseline-ref` or supply `--baseline-file` explicitly. The application and ordinary checks do not need that historical baseline.
 
