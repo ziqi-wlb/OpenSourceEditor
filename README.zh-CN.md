@@ -127,7 +127,9 @@ python3 scripts/generate_release_notes.py --check
 
 `--ui` 需要已登录的 macOS 桌面，会临时激活测试窗口。跨模块或发布时可用 `--suite full`，无需每次小改动重复全套。发布版与测试版拥有独立应用身份，产物、样本和备份保存在忽略的 `.build/` 下。
 
-0.9.10 的核心编辑、文档设置、原生输入和切分专项共 **167 项通过**。这不代表全套通过：一次更广泛运行保留了分割条拖动和渲染标题链接导航两项 Markdown UI 失败。Intel 版本入口在 Rosetta 验证，实体 Intel 和 Windows GUI 尚待验证。详情见 [输入稳定性与执行范围](docs/typing-stability.zh-CN.md)。GitHub 工作流配置不等于云端已经成功运行。
+0.9.10 的核心编辑、文档设置、原生输入和切分专项共 **167 项通过**。这不代表全套通过：一次更广泛运行保留了分割条拖动和渲染标题链接导航两项 Markdown UI 失败。Intel 版本入口在 Rosetta 验证，实体 Intel 和 Windows GUI 尚待验证。详情见 [输入稳定性与执行范围](docs/typing-stability.zh-CN.md)。
+
+2026-10-31 本轮分析重新编译 Universal，**280 项无界面检查通过、13 项明确跳过**。`042ea05` 的[修复 CI](https://github.com/ziqi-wlb/OpenSourceEditor/actions/runs/41200817992)通过 macOS 构建/检查/打包及 Windows MSVC 构建/Unicode 编码执行。产品 UI 复查仍有两项失败，具体问题及完善顺序见[当前差距分析](docs/current-gap-analysis.zh-CN.md)。
 
 LSP、更完整语法/片段引擎、矩形选择、集成终端/Git、项目正则/替换和完整扩展兼容仍是后续工作。Markdown 公式/Mermaid/PDF、自动更新、Developer ID 签名/公证、长期 IME/无障碍及大项目验收也需完善。见 [开发与贡献](docs/development.zh-CN.md) 和 [产品就绪计划](docs/product-readiness.zh-CN.md)。
 

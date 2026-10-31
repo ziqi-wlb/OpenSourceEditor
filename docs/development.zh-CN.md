@@ -19,7 +19,7 @@ bash package.sh universal
 
 可用 `--arch arm64` 或 `--arch x86_64` 构建单架构。Universal 包含两份实际编译切片，不是模拟架构支持；另一架构的原生 GUI 应在对应硬件验证。安装器检查是否有运行实例，保存旧安装，安装到 `~/Applications/Source Editor.app`，注册 Launch Services 后启动。Finder 的 Open With 提供 Markdown 与文本文件关联，安装不会自动更改默认编辑器。
 
-程序目前没有开发者签名或公证。下载后的系统确认按正常 Finder Open 流程处理；脚本不关闭系统安全设置。
+当前 macOS 程序带有链接器生成的 ad hoc 签名，没有 Developer ID 签名或公证。下载后的系统确认按正常 Finder Open 流程处理；脚本不关闭系统安全设置。
 
 ## 本地调试交付
 

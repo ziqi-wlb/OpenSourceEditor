@@ -127,7 +127,9 @@ python3 scripts/generate_release_notes.py --check
 
 `--ui` requires a logged-in macOS desktop and temporarily activates test windows. Broader validation is available with `--suite full`; it is not required for every small edit. Release and test applications have separate identities. Artifacts, fixtures and backups stay in ignored `.build/` directories.
 
-The 0.9.10 focused run passed **167 checks** across core editing, document settings, native typing and splits. It is not a full-suite pass: a broader run retained two Markdown UI failures involving divider dragging and heading-link navigation. Intel version entry was checked under Rosetta; physical Intel GUI and Windows GUI validation remain open. See [typing stability and executed scope](docs/typing-stability.md). The workflow files configure GitHub builds; their presence does not establish a successful cloud run.
+The 0.9.10 focused run passed **167 checks** across core editing, document settings, native typing and splits. It is not a full-suite pass: a broader run retained two Markdown UI failures involving divider dragging and heading-link navigation. Intel version entry was checked under Rosetta; physical Intel GUI and Windows GUI validation remain open. See [typing stability and executed scope](docs/typing-stability.md).
+
+The 2026-10-31 review rebuilt Universal and passed **280 headless checks, with 13 explicit skips**. [Repair CI at `042ea05`](https://github.com/ziqi-wlb/OpenSourceEditor/actions/runs/41200817992) passed macOS build/check/package and Windows MSVC build/Unicode codec execution. The product UI recheck still has two failures. See [current gaps and improvement priorities](docs/current-gap-analysis.md).
 
 LSP, richer grammar/snippet engines, rectangular selection, integrated terminal/Git tooling, project regex/replace and full extension compatibility remain future work. Markdown math/Mermaid/PDF, automatic updates, Developer ID signing/notarization, prolonged IME/accessibility and large-project acceptance also need work. See [development and contribution](docs/development.md) and [readiness plan](docs/product-readiness.md).
 

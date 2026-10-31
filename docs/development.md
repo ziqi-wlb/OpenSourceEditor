@@ -19,7 +19,7 @@ bash package.sh universal
 
 Use `--arch arm64` or `--arch x86_64` for one architecture. Universal contains two compiled slices; native GUI behavior still needs corresponding hardware validation. The installer refuses running instances, preserves the previous installation, installs to `~/Applications/Source Editor.app`, registers Launch Services and launches. Finder Open With offers Markdown/text associations without changing the default editor.
 
-Current builds are unsigned and unnotarized. Use the normal Finder Open approval flow for downloads; scripts do not disable system security.
+Current macOS executables have ad hoc linker signatures, without Developer ID signing or notarization. Use the normal Finder Open approval flow for downloads; scripts do not disable system security.
 
 ## Delivering a local debug build
 

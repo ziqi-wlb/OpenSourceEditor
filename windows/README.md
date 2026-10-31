@@ -20,7 +20,7 @@ For cross-compilation with an explicitly installed Zig 0.13.0:
 ZIG_BIN=/path/to/zig bash windows/build.sh
 ```
 
-The script does not download a compiler. GitHub Actions also has a Windows/MSVC build job. A PE binary and correct imports establish a build result; actual Windows execution and GUI checks are separate.
+The script does not download a compiler. GitHub Actions also has a Windows/MSVC build job. At `042ea05`, the [Windows job](https://github.com/ziqi-wlb/OpenSourceEditor/actions/runs/41200817992/job/124536087943) passed release/test compilation and native Unicode codec execution. Compiler logs stay under `.build/*-build.log` and are uploaded on failure as well as success. Native GUI checks remain separate.
 
 ## Current scope
 

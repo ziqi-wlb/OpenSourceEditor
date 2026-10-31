@@ -20,7 +20,7 @@ powershell -ExecutionPolicy Bypass -File windows/build.ps1
 ZIG_BIN=/path/to/zig bash windows/build.sh
 ```
 
-脚本不会下载编译器。GitHub Actions 配置了 Windows/MSVC 构建；PE 文件和导入正确只证明编译，实际 Windows GUI 验收另行记录。
+脚本不会下载编译器。GitHub Actions 配置了 Windows/MSVC 构建；`042ea05` 的 [Windows 任务](https://github.com/ziqi-wlb/OpenSourceEditor/actions/runs/41200817992/job/124536087943)已经通过正式/测试编译及原生 Unicode 编码执行。编译日志保存在 `.build/*-build.log`，成功或失败后均上传。原生 Windows GUI 验收仍单独进行。
 
 ## 能力与限制
 
