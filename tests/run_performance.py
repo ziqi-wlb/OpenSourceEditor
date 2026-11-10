@@ -132,8 +132,8 @@ def main():
     failures = 0
     for case in args.cases:
         scenario, size = case.split(":")
-        if scenario not in ("file", "comment", "multiple", "undo", "markdown") or int(size) <= 0:
-            parser.error("cases must be file|comment|multiple|undo|markdown:positive_bytes")
+        if scenario not in ("file", "comment", "multiple", "undo", "markdown", "sidebar") or int(size) <= 0:
+            parser.error("cases must be file|comment|multiple|undo|markdown|sidebar:positive_bytes")
         directory = output / (scenario + "-" + size)
         directory.mkdir()
         started = time.monotonic()

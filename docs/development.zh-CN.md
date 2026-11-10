@@ -94,3 +94,5 @@ macOS 0.9.9 复用窗口顶部标题进行临时路径输入，移除编辑区�
 图片验收另外执行 `--image-ui-test=` 与独立进程图片重启检查。图片样本、解码/取消结果及截图保存在对应运行目录；使用固定的生产源码摘要标识验收包。见[图片预览](image-preview.zh-CN.md)。
 
 日常开发按改动范围运行检查。`--suite typing` 运行文档/核心编辑和原生输入/切分，省去其他运行套件；涉及跨模块或发布验证时可用 `--suite full`。`--typing-ui-test=` 验证长列表回车、滚动、撤销和文字颜色。繁忙主机可用 `--build-timeout` 调整编译等待上限，不改变运行检查时限。参见[编辑稳定性](typing-stability.zh-CN.md)。
+
+排查 macOS 内存时，同时采集 physical footprint、堆引用链和 RSS。侧栏后台刷新需要覆盖鼠标停留在侧栏、刷新之间不注入输入事件的情况。运行 `python3 tests/run_performance.py sidebar-memory --cycles 20 --cases sidebar:65536`，检查 1000 次刷新中的行/单元格生命周期及路径提示。根因、交付修改和验证限制见 [0.9.11 内存排查](memory-investigation.zh-CN.md)。

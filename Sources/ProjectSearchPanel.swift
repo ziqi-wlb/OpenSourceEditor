@@ -159,23 +159,23 @@ final class ProjectSearchPanel: NSObject, NSTableViewDataSource, NSTableViewDele
         return false
     }
     func numberOfRows(in tableView: NSTableView) -> Int { hits.count }
+
+    func tableView(_ tableView: NSTableView, rowViewForRow row: Int) -> NSTableRowView? {
+        reusableTableRow(in: tableView, identifier: "project.row")
+    }
     func tableView(_ tableView: NSTableView, viewFor tableColumn: NSTableColumn?, row: Int) -> NSView? {
         guard hits.indices.contains(row) else { return nil }
         let hit = hits[row]
-        let view = NSTableCellView()
+        let identifier = NSUserInterfaceItemIdentifier("project.match")
+        let view = tableView.makeView(withIdentifier: identifier, owner: nil) as? TwoLineTableCell ??
+            TwoLineTableCell(identifier: identifier, inset: 10, titleFont: .systemFont(ofSize: 12, weight: .semibold), detailFont: .monospacedSystemFont(ofSize: 11, weight: .regular))
         let relative = hit.file.pathComponents.dropFirst(root.pathComponents.count).joined(separator: "/")
-        let title = NSTextField(labelWithString: "\(relative):\(hit.line)")
-        title.font = .systemFont(ofSize: 12, weight: .semibold)
+        let title = view.title, excerpt = view.detail
+        title.stringValue = "\(relative):\(hit.line)"
         title.lineBreakMode = .byTruncatingMiddle
-        let excerpt = NSTextField(labelWithString: hit.excerpt)
-        excerpt.font = .monospacedSystemFont(ofSize: 11, weight: .regular)
+        excerpt.stringValue = hit.excerpt
         excerpt.textColor = .secondaryLabelColor
         excerpt.lineBreakMode = .byTruncatingTail
-        for label in [title, excerpt] { label.translatesAutoresizingMaskIntoConstraints = false; view.addSubview(label) }
-        NSLayoutConstraint.activate([
-            title.leadingAnchor.constraint(equalTo: view.leadingAnchor, constant: 10), title.trailingAnchor.constraint(equalTo: view.trailingAnchor, constant: -10), title.topAnchor.constraint(equalTo: view.topAnchor, constant: 5),
-            excerpt.leadingAnchor.constraint(equalTo: title.leadingAnchor), excerpt.trailingAnchor.constraint(equalTo: title.trailingAnchor), excerpt.topAnchor.constraint(equalTo: title.bottomAnchor, constant: 3),
-        ])
         return view
     }
     #if EDITOR_TESTS

@@ -83,7 +83,79 @@ enum PerformanceTests {
             workspace.window.setContentSize(NSSize(width: 1220, height: 810))
             await pump(0.3)
             snapshot("empty_window", extra: ["fixture_bytes": source.utf8.count])
-            if scenario == "markdown" {
+            if scenario == "sidebar" {
+                let project = directory.appendingPathComponent("Sidebar 中文😀", isDirectory: true)
+                try FileManager.default.createDirectory(at: project, withIntermediateDirectories: true)
+                for index in 0..<80 {
+                    try Data("sidebar fixture\n".utf8).write(to: project.appendingPathComponent(String(format: "file-%03d.txt", index)))
+                }
+                func descendants(_ view: NSView) -> [NSView] { [view] + view.subviews.flatMap(descendants) }
+                let outline = descendants(workspace.window.contentView!).compactMap { $0 as? NSOutlineView }.first!
+                workspace.setProject(project)
+                workspace.openDocument(project.appendingPathComponent("file-079.txt"))
+                workspace.window.makeKeyAndOrderFront(nil)
+                NSApp.activate(ignoringOtherApps: true)
+                workspace.window.contentView?.layoutSubtreeIfNeeded()
+                let hover = outline.convert(NSPoint(x: 80, y: outline.visibleRect.midY), to: nil)
+                let screen = workspace.window.convertPoint(toScreen: hover)
+                CGEvent(mouseEventSource: nil, mouseType: .mouseMoved,
+                    mouseCursorPosition: CGPoint(x: screen.x, y: NSScreen.screens[0].frame.maxY - screen.y), mouseButton: .left)?.post(tap: .cghidEventTap)
+                await pump(1.5)
+                var trackedRows: [ObjectIdentifier: WeakObject] = [:]
+                var trackedCells: [ObjectIdentifier: WeakObject] = [:]
+                for cycle in 1...cycles {
+                    for refresh in 0..<50 {
+                        do {
+                            workspace.refreshProjectForMemoryTesting()
+                            if refresh % 10 == 0 { outline.scrollRowToVisible(0) }
+                            workspace.window.contentView?.layoutSubtreeIfNeeded()
+                            workspace.window.displayIfNeeded()
+                            let visible = outline.rows(in: outline.visibleRect)
+                            for row in visible.location..<NSMaxRange(visible) {
+                                if let view = outline.rowView(atRow: row, makeIfNecessary: false) { trackedRows[ObjectIdentifier(view)] = WeakObject(view) }
+                                if let cell = outline.view(atColumn: 0, row: row, makeIfNecessary: false) { trackedCells[ObjectIdentifier(cell)] = WeakObject(cell) }
+                            }
+                        }
+                        // Background file refreshes can run while AppKit waits
+                        // for input. Do not inject events or drain their pool.
+                        try? await Task.sleep(nanoseconds: 5_000_000)
+                    }
+                    // Keep removed cells alive deliberately so cleanup cannot
+                    // pass merely because weak references became nil.
+                    do {
+                        outline.scrollRowToVisible(0)
+                        workspace.window.contentView?.layoutSubtreeIfNeeded()
+                        let visible = outline.rows(in: outline.visibleRect)
+                        let removedCells = (max(1, visible.location)..<NSMaxRange(visible)).compactMap {
+                            outline.view(atColumn: 0, row: $0, makeIfNecessary: false) as? NSTableCellView
+                        }
+                        check("Tooltip removal fixture has live cells cycle \(cycle)", !removedCells.isEmpty)
+                        outline.collapseItem(outline.item(atRow: 0), collapseChildren: true)
+                        workspace.window.contentView?.layoutSubtreeIfNeeded()
+                        workspace.window.displayIfNeeded()
+                        try? await Task.sleep(nanoseconds: 20_000_000)
+                        check("Collapsed live cells unregister tooltips cycle \(cycle)", removedCells.allSatisfy { $0.toolTip == nil })
+                        outline.expandItem(outline.item(atRow: 0))
+                        workspace.window.contentView?.layoutSubtreeIfNeeded()
+                    }
+                    try? await Task.sleep(nanoseconds: 200_000_000)
+                    let aliveRows = trackedRows.values.filter { $0.value != nil }.count
+                    let aliveCells = trackedCells.values.filter { $0.value != nil }.count
+                    snapshot("cycle_\(cycle)_sidebar", extra: ["refreshes": cycle * 50,
+                        "retained_rows": aliveRows, "retained_cells": aliveCells])
+                    check("Sidebar row reuse stays bounded cycle \(cycle)", aliveRows < 256)
+                    check("Sidebar cell reuse stays bounded cycle \(cycle)", aliveCells < 256)
+                    let retired = trackedCells.values.compactMap { $0.value as? NSTableCellView }.filter { $0.superview == nil }
+                    check("Retired sidebar cells unregister tooltips cycle \(cycle)", retired.allSatisfy { $0.toolTip == nil })
+                    for row in outline.rows(in: outline.visibleRect).location..<NSMaxRange(outline.rows(in: outline.visibleRect)) {
+                        if let cell = outline.view(atColumn: 0, row: row, makeIfNecessary: false) as? SidebarTableCell {
+                            let path = cell.toolTip.map { URL(fileURLWithPath: $0) }
+                            check("Reused sidebar path matches label cycle \(cycle) row \(row)", path != nil && cell.label.stringValue == path?.lastPathComponent && path!.path.hasPrefix(project.path))
+                            check("Reused sidebar has one label and icon cycle \(cycle) row \(row)", cell.subviews.count == 2)
+                        }
+                    }
+                }
+            } else if scenario == "markdown" {
                 var closedDocuments: [WeakObject] = []
                 for cycle in 1...cycles {
                     workspace.openDocument(fixture)

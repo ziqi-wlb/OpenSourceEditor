@@ -4,6 +4,10 @@
 
 Author: ziqi-wlb · [550461053@qq.com](mailto:550461053@qq.com)
 
+## 0.9.11
+
+- Reuse sidebar, command palette and project-search cells; unregister tooltips when sidebar rows leave display to prevent retained UI growth.
+
 ## 0.9.10
 
 - Keep caret, viewport and unchanged split layout stable during list Return, Tab and custom-edit undo/redo.

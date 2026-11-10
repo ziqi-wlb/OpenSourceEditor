@@ -787,26 +787,22 @@ private final class CommandPalette: NSObject, NSTableViewDataSource, NSTableView
 
     func numberOfRows(in tableView: NSTableView) -> Int { filtered.count }
 
+    func tableView(_ tableView: NSTableView, rowViewForRow row: Int) -> NSTableRowView? {
+        reusableTableRow(in: tableView, identifier: "palette.row")
+    }
+
     func tableView(_ tableView: NSTableView, viewFor tableColumn: NSTableColumn?, row: Int) -> NSView? {
         guard filtered.indices.contains(row) else { return nil }
-        let view = NSTableCellView()
-        let title = NSTextField(labelWithString: filtered[row].title)
-        title.font = NSFont.systemFont(ofSize: 14, weight: .medium)
+        let identifier = NSUserInterfaceItemIdentifier("palette.choice")
+        let view = tableView.makeView(withIdentifier: identifier, owner: nil) as? TwoLineTableCell ??
+            TwoLineTableCell(identifier: identifier, inset: 12, titleFont: .systemFont(ofSize: 14, weight: .medium), detailFont: .systemFont(ofSize: 11))
+        let title = view.title, detail = view.detail
+        title.stringValue = filtered[row].title
         title.lineBreakMode = .byTruncatingTail
         title.textColor = EditorTheme.foreground
-        let detail = NSTextField(labelWithString: filtered[row].detail)
-        detail.font = NSFont.systemFont(ofSize: 11)
+        detail.stringValue = filtered[row].detail
         detail.textColor = EditorTheme.muted
         detail.lineBreakMode = .byTruncatingMiddle
-        for item in [title, detail] { item.translatesAutoresizingMaskIntoConstraints = false; view.addSubview(item) }
-        NSLayoutConstraint.activate([
-            title.leadingAnchor.constraint(equalTo: view.leadingAnchor, constant: 12),
-            title.topAnchor.constraint(equalTo: view.topAnchor, constant: 5),
-            title.trailingAnchor.constraint(equalTo: view.trailingAnchor, constant: -12),
-            detail.leadingAnchor.constraint(equalTo: title.leadingAnchor),
-            detail.topAnchor.constraint(equalTo: title.bottomAnchor, constant: 3),
-            detail.trailingAnchor.constraint(equalTo: title.trailingAnchor),
-        ])
         return view
     }
 }
@@ -1268,6 +1264,10 @@ final class EditorWorkspace: NSObject, NSWindowDelegate,
         if let sidebar { restoreProjectSidebar(sidebar); scrollProjectSidebar(to: sidebar.scrollY) }
         followCurrentFileInSidebar()
     }
+
+    #if EDITOR_TESTS
+    func refreshProjectForMemoryTesting() { refreshProject() }
+    #endif
 
     @discardableResult
     func createProjectItem(in parent: URL, name: String, directory: Bool) throws -> URL {
@@ -2857,25 +2857,25 @@ final class EditorWorkspace: NSObject, NSWindowDelegate,
             path = document.fileURL?.path
             isFolder = false
         } else { return nil }
-        let cell = NSTableCellView()
-        let icon = NSImageView()
+        let cell = outlineView.makeView(withIdentifier: SidebarTableCell.reuseIdentifier, owner: nil) as? SidebarTableCell ?? SidebarTableCell()
+        let icon = cell.icon, label = cell.label
         icon.image = NSImage(systemSymbolName: isFolder ? "folder" : "doc.text", accessibilityDescription: nil)
         icon.contentTintColor = isFolder ? EditorTheme.accent : EditorTheme.muted
-        let label = NSTextField(labelWithString: value)
-        label.font = NSFont.systemFont(ofSize: 12)
+        label.stringValue = value
         label.textColor = EditorTheme.foreground
         label.lineBreakMode = .byTruncatingMiddle
         cell.toolTip = path
-        for view in [icon, label] { view.translatesAutoresizingMaskIntoConstraints = false; cell.addSubview(view) }
-        NSLayoutConstraint.activate([
-            icon.leadingAnchor.constraint(equalTo: cell.leadingAnchor, constant: 2),
-            icon.centerYAnchor.constraint(equalTo: cell.centerYAnchor),
-            icon.widthAnchor.constraint(equalToConstant: 14),
-            label.leadingAnchor.constraint(equalTo: icon.trailingAnchor, constant: 6),
-            label.trailingAnchor.constraint(equalTo: cell.trailingAnchor, constant: -6),
-            label.centerYAnchor.constraint(equalTo: cell.centerYAnchor),
-        ])
         return cell
+    }
+
+    func outlineView(_ outlineView: NSOutlineView, rowViewForItem item: Any) -> NSTableRowView? {
+        reusableTableRow(in: outlineView, identifier: "sidebar.row")
+    }
+
+    func outlineView(_ outlineView: NSOutlineView, didRemove rowView: NSTableRowView, forRow row: Int) {
+        // AppKit's tooltip registry can retain removed cells and their rows.
+        // Unregister before caching/removing; viewFor restores the current path.
+        for cell in rowView.subviews.compactMap({ $0 as? SidebarTableCell }) { cell.toolTip = nil }
     }
 
     @objc private func projectDoubleClick() {

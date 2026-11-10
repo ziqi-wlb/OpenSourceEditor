@@ -7,6 +7,15 @@
   },
   "releases": [
     {
+      "version": "0.9.11",
+      "changes": [
+        {
+          "english": "Reuse sidebar, command palette and project-search cells; unregister tooltips when sidebar rows leave display to prevent retained UI growth.",
+          "chinese": "复用侧栏、命令面板与项目搜索单元格；侧栏行退出显示时注销路径提示，防止旧界面对象持续累积。"
+        }
+      ]
+    },
+    {
       "version": "0.9.10",
       "changes": [
         {
